@@ -45,8 +45,46 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Paisaidee — what's on in Vientiane</title>
-  <meta name="description" content="Paisaidee (ມ່ວນ) — live map of bars, cafes and events in Vientiane. ຄືນນີ້ໄປໃສດີ?">
+  <!-- "Paisaidee (ມ່ວນ)" used to be here. ມ່ວນ is the old internal project
+       name, and CLAUDE.md is explicit that it stays internal (muan-db, the
+       repo, muan.pages.dev) while the display name is Paisaidee — so the one
+       place it was shown to a human, and to every search result and link
+       preview, was the one place it did not belong. The Lao that belongs
+       next to the brand is ໄປໃສດີ, which the brand lockup already carries. -->
+  <meta name="description" content="Paisaidee — a live map of bars, cafes and events in Vientiane. ຄືນນີ້ໄປໃສດີ?">
   <meta name="theme-color" content="#131019">
+
+  <!-- Link previews. The block between these two markers is what
+       functions/index.js rewrites for a /?v=<venue-id> share link — it does a
+       single replace on the whole block, so the exact comment text is load-
+       bearing; if either marker goes missing the Function leaves the page
+       completely alone and these site-wide defaults are what gets shared.
+       Keep the markers, keep the tags inside them.
+
+       og:image / og:url are absolute because scrapers are inconsistent about
+       resolving relative ones, which means the production host is hardcoded.
+       muan.pages.dev is still it (README: a custom domain is pending, same
+       purchase trip as LaoWander) — when paisaidee.app lands, these two
+       lines change and nothing else does. Function-rewritten previews build
+       their URLs from the incoming request instead, so they follow whatever
+       host the link was actually shared on, including preview deploys. -->
+  <!-- og:start -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Paisaidee">
+  <meta property="og:title" content="Paisaidee — what's on in Vientiane">
+  <meta property="og:description" content="A live map of bars, cafes and events in Vientiane. ຄືນນີ້ໄປໃສດີ?">
+  <meta property="og:url" content="https://muan.pages.dev/">
+  <meta property="og:image" content="https://muan.pages.dev/assets/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Paisaidee — ໄປໃສດີ">
+  <meta property="og:locale" content="lo_LA">
+  <meta property="og:locale:alternate" content="en_GB">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Paisaidee — what's on in Vientiane">
+  <meta name="twitter:description" content="A live map of bars, cafes and events in Vientiane. ຄືນນີ້ໄປໃສດີ?">
+  <meta name="twitter:image" content="https://muan.pages.dev/assets/og-default.png">
+  <!-- og:end -->
 
   <style>
     #splash {
@@ -131,6 +169,14 @@
 
   <link rel="stylesheet" href="css/style.css">
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <!-- add-to-home-screen (README's "Before public launch" list). No service
+       worker is registered and none is planned yet, so this is an installable
+       shortcut, not an offline app: launched from the home screen it still
+       needs the network for everything, exactly as the browser tab does.
+       apple-touch-icon is listed separately because iOS ignores the
+       manifest's icons array when picking the home-screen glyph. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
 </head>
 <body>
 <div id="splash">

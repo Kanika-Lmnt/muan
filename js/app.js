@@ -320,6 +320,7 @@ async function requestLocation() {
     updateUserMarker();
     updateLocatePill();
     updateSelectedDistancePill();
+    refreshOpenVenueLocationUi();
     refineLocation();
     return state.userPos;
   } catch (err) {
@@ -330,8 +331,25 @@ async function requestLocation() {
     geoDebug(`[geo] error code=${err.code} message=${err.message}`);
     console.warn('geolocation', err.code, err.message);
     updateLocatePill();
+    // state.geoError is read by BOTH the check-in button and the distance
+    // line, so a failure has to reach the open sheet too — not just the pill
+    refreshOpenVenueLocationUi();
     return null;
   }
+}
+
+/* "location state changed; if a venue sheet is open, relabel it" — done here,
+   inside the one function that requests location, rather than left to each
+   caller. warmLocation() (fired by openVenue() itself) went through
+   requestLocation() without ever doing this, so on the common path — sheet
+   opens, fix lands a moment later — the sheet was only ever corrected by
+   refineLocation()'s high-accuracy follow-up, and that one DID call
+   updateCheckinButton() while leaving the distance line alone. That is the
+   exact pair of facts behind the Go Dunk contradiction. */
+function refreshOpenVenueLocationUi() {
+  if (state.sheetView?.type !== 'venue') return;
+  const v = venueById(state.sheetView.venueId);
+  if (v) refreshVenueLocationUi(v);
 }
 
 // silent high-accuracy follow-up fired after requestLocation()'s coarse fix
@@ -347,7 +365,7 @@ function refineLocation() {
       updateSelectedDistancePill();
       if (state.selectedId) {
         const v = venueById(state.selectedId);
-        if (v) updateCheckinButton(v);
+        if (v) refreshVenueLocationUi(v);
       }
     },
     err => geoDebug(`[geo] refine error code=${err.code}`),
@@ -480,10 +498,9 @@ function refreshVenuesFromLive(live) {
   // every live response whether or not the venues differ from the bundle
   if (Number.isFinite(live.checkin_radius_m) && live.checkin_radius_m !== state.checkinRadiusM) {
     state.checkinRadiusM = live.checkin_radius_m;
-    if (state.sheetView.type === 'venue') {
-      const open = venueById(state.sheetView.venueId);
-      if (open) updateCheckinButton(open);
-    }
+    // one entry point, even though a radius change alone cannot alter the
+    // distance line — see refreshVenueLocationUi()
+    refreshOpenVenueLocationUi();
   }
   // D1 threw and the Function served its own copy of the same mirror we are
   // already showing (see functions/api/venues.js) — no re-render to do, but
@@ -1376,6 +1393,25 @@ function playOnceInto(container, svgHtml, ms = 3000) {
 // injects assets/404.svg into every placeholder left by renderHomeSheet()'s
 // empty states. Fetched after setSheet() has already rendered the text (not
 // awaited inline), so a slow first-ever fetch never delays the sheet itself
+/* Phai (ໄຟ), the mascot — assets/mascot/phai-<pose>.svg, Kar's files.
+   Rendered as a plain <img>, not fetched and inlined the way assets/404.svg
+   is through injectEmptyIcons(): these are ~1KB each and the browser caches
+   them, so there is nothing to gain from the fetch-and-inject dance, and an
+   <img> cannot leak the SVG's own class names (.body, .eyes, .face) into the
+   page's stylesheet, which inlining would.
+
+   Motion: each pose SVG carries its own `@media (prefers-reduced-motion:
+   reduce) { animation: none }` (only phai-idle animates — flicker + blink).
+   That media query is evaluated inside the image against the user's real
+   setting, so unlike the SMIL in 404.svg this needs no pauseAnimations()
+   call from here — which is just as well, since an <img>'s document is not
+   reachable from this side.
+
+   width/height are the pose files' own viewBox (200x240) so the box is
+   reserved before the SVG arrives and nothing below it jumps. */
+const mascotHtml = (pose, cls) =>
+  `<img class="${cls}" src="assets/mascot/phai-${pose}.svg" alt="" width="200" height="240" loading="lazy" draggable="false">`;
+
 async function injectEmptyIcons() {
   const targets = [...document.querySelectorAll('[data-empty-svg]')];
   if (!targets.length) return;
@@ -1542,18 +1578,29 @@ function renderFlameIntro(flameHtml, onDone) {
 const FLAME_INVITE_BELOW = 3;
 
 // the invitation that replaces the flame card below FLAME_INVITE_BELOW.
-// The flame is still here — small, unlit, dimmed — because it's what the
-// rest of the screen is about; what it is NOT allowed to do is carry a heat
-// line. "your flame has cooled" is a sentence about a habit that lapsed,
-// and nobody with two check-ins has a habit to lapse yet.
+// What it is NOT allowed to do is carry a heat line: "your flame has cooled"
+// is a sentence about a habit that lapsed, and nobody with two check-ins has
+// a habit to lapse yet.
+//
+// At one or two check-ins the flame is still here — small, unlit, dimmed —
+// because it's what the rest of the screen is about, and there is a real,
+// if faint, flame to show.
+//
+// At ZERO it is Phai idle instead. There is no flame yet, and a dimmed
+// unlit one is a picture of the absence rather than of the invitation; the
+// mascot is the one who can do the inviting. This swaps the ILLUSTRATION in
+// this one card at this one count — assets/flame.svg is untouched and is
+// still what every heat state, every other check-in count and the intro
+// animation render (see flameCardHtml(), renderFlameIntro()). Reverting is
+// this ternary.
 function flameInviteHtml(flameHtml, totalCheckins) {
   const first = totalCheckins === 0;
   const left = FLAME_INVITE_BELOW - totalCheckins;
   return `
     <div class="fl-card fl-card-flame fl-card-invite">
-      <div class="fl-flame fl-flame-invite" data-heat="cold">
-        ${flameHtml}
-      </div>
+      ${first
+        ? mascotHtml('idle', 'fl-phai-invite')
+        : `<div class="fl-flame fl-flame-invite" data-heat="cold">${flameHtml}</div>`}
       <div class="fl-invite-title">${first ? 'Light your first flame' : 'Keep it going'}</div>
       <div class="fl-invite-lines">
         <div class="fl-invite-line">Check in when you get somewhere — a bar, a caf&eacute;, anywhere on the map.</div>
@@ -4627,7 +4674,11 @@ function renderHomeSearchResults() {
   const count = [venues.length && plural(venues.length, 'place', 'places'), events.length && plural(events.length, 'event', 'events')].filter(Boolean).join(' · ');
   box.innerHTML = (venues.length || events.length)
     ? `<div class="home-results-count">${count}</div>${venues.map(v => isMobile() ? rowCard(v) : plainListCardHtml(v)).join('')}${events.map(eventRowHtml).join('')}`
-    : `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Nothing matches “${esc(state.homeQuery.trim())}”.</div>`;
+    // Phai looking over, not the 404 illustration: a search that found
+    // nothing is not an error, and this is the one empty state the user
+    // caused themselves by typing. No data-empty-svg here, so
+    // injectEmptyIcons() below simply finds nothing to fill in.
+    : `<div class="sec-empty">${mascotHtml('looking-over', 'sec-empty-phai')}Nothing matches “${esc(state.homeQuery.trim())}”.</div>`;
   box.querySelectorAll('[data-open-venue]').forEach(el => el.addEventListener('click', () => openVenue(el.dataset.openVenue)));
   body.hidden = true;
   box.hidden = false;
@@ -4664,10 +4715,17 @@ function distanceRowHtml() {
 // so and offer the one tap that undoes it, rather than the generic line —
 // "Nothing here right now" would read as "there are no bars".
 function typeListEmptyHtml() {
-  const body = distanceFilterActive()
-    ? `Nothing within ${distanceLabel(state.distanceFilterM)} of you. <button type="button" class="sec-empty-action" data-dist="">Show any distance</button>`
-    : 'Nothing here right now — try another filter.';
-  return `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>${body}</div>`;
+  // Phai looking over for the distance case only — same reasoning as the
+  // search state: the user set a radius and there is simply nothing inside
+  // it, which is an answer, not a failure. The generic branch keeps
+  // assets/404.svg (and its data-empty-svg placeholder for
+  // injectEmptyIcons()) because that one really can mean something is wrong.
+  if (distanceFilterActive()) {
+    return `<div class="sec-empty">${mascotHtml('looking-over', 'sec-empty-phai')}` +
+      `Nothing within ${distanceLabel(state.distanceFilterM)} of you. ` +
+      `<button type="button" class="sec-empty-action" data-dist="">Show any distance</button></div>`;
+  }
+  return `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Nothing here right now — try another filter.</div>`;
 }
 
 function surpriseMeHtml(filter) {
@@ -4925,18 +4983,48 @@ function renderHomeSheet() {
   /* What's happening — the mockup's second section, on All only: the
      soonest few events (tonight first) as rows, and See all to the Events
      tab, which keeps the fuller Tonight / Coming up layout. Lao is ອີເວັນ,
-     the Events chip's own word, not a new phrase. The two empty states are
-     the ones the Tonight section already had, for the same two reasons. */
+     the Events chip's own word, not a new phrase.
+
+     THREE CASES, because the section was telling two different untruths:
+
+     1. Events failed to load. Unchanged: say so, keep the header, because a
+        missing section would read as "nothing on" when we simply do not know.
+
+     2. Nothing at all. The section is NOT rendered — no header, no empty
+        box. It used to render a full-height .sec-empty saying "Nothing
+        verified yet — new list every Thursday", which is a section-shaped
+        apology plus a promise about a curation rhythm. Home has real venue
+        content either side of it; a header over an empty box is the app
+        making a thing of its own emptiness.
+
+     3. Everything live is a weekly fixture, which is what TODAY looks like:
+        every one-off dated event in data/events.json has expired, and the
+        only two left are the open-ended repeats (Make Friends on Thursdays
+        at Corebeer, the Felicia X lineup Fri/Sat/Sun at Status). Those are
+        true and worth showing — but calling them "What's happening" under a
+        "new list every Thursday" promise presents a standing fixture as
+        this week's news, which is the dishonest version. Same rows, honest
+        header: they ARE what runs every week, so say that.
+
+     The repeat test is repeatDays(ev).length, the same function eventDate()
+     uses to decide the date in the first place — not a second idea of what
+     a repeat is. */
   if (f === 'all') {
     const HAPPENING_MAX = 3;
     const happening = [...tonight, ...upcoming];
-    rendered = true;
-    const seeAll = happening.length ? '<button type="button" class="sec-see-all" data-see-all="event">See all</button>' : '';
-    html += secH("What's happening · ອີເວັນ", seeAll) + (happening.length
-      ? happening.slice(0, HAPPENING_MAX).map(eventRowHtml).join('')
-      : state.eventsFailed
-        ? `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Couldn't load what's on — check your connection and reload. The venues below still work.</div>`
-        : `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Nothing verified yet — new list every Thursday.</div>`);
+    if (state.eventsFailed) {
+      rendered = true;
+      html += secH("What's happening · ອີເວັນ") +
+        `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Couldn't load what's on — check your connection and reload. The venues below still work.</div>`;
+    } else if (happening.length) {
+      rendered = true;
+      // TODO(lao): ທຸກອາທິດ is "every week" applied, not something Kar
+      // wrote — same flag as surpriseMeHtml()'s restaurant label.
+      const repeatsOnly = happening.every(ev => repeatDays(ev).length > 0);
+      const heading = repeatsOnly ? 'Every week · ທຸກອາທິດ' : "What's happening · ອີເວັນ";
+      const seeAll = '<button type="button" class="sec-see-all" data-see-all="event">See all</button>';
+      html += secH(heading, seeAll) + happening.slice(0, HAPPENING_MAX).map(eventRowHtml).join('');
+    }
   }
 
   const busyVenuesQ = sortEditorial(busyVenues);
@@ -5033,10 +5121,70 @@ function renderHomeSheet() {
   sh.classList.remove('sheet-anim'); void sh.offsetWidth; sh.classList.add('sheet-anim');
 }
 
+/* the venue sheet's distance line (#travelLine, in the name/tagline row).
+   Pure: everything it needs is `v` plus live state, so it can be re-asked
+   at any time rather than only at openVenue() time.
+
+   THE BUG this was extracted for: openVenue() computed this once, inline,
+   into the sheet's HTML string. updateCheckinButton() below reads the same
+   state.userPos but runs again on every fix (refineLocation(), the "near
+   me" pill, toggleRoute()). So a fix that arrived AFTER the sheet opened —
+   which is the normal case, since openVenue() itself kicks off
+   warmLocation() — relabelled the button and left this line untouched, and
+   the sheet said 'tap "near me" for distance' directly above a button
+   saying "18.0 km away — get closer". Nothing about it was Go Dunk's: any
+   venue opened before the first fix landed read the same way, and the two
+   lines disagreed for as long as the sheet stayed open.
+
+   Every caller now goes through refreshVenueLocationUi() so the two cannot
+   be updated separately again. The pending/sticky-route cases are
+   recomputed from state here rather than taken as arguments for the same
+   reason — a caller cannot hand this a stale answer. */
+function travelLineHtml(v) {
+  // owner-submitted venue awaiting Kar's pin (migrations/009_pin_status.sql)
+  // — no confirmed lat/lng, so there is no distance to state
+  if (v.pin_status === 'pending') return 'Location being confirmed';
+  // a route drawn to THIS venue owns the line (see toggleRoute()); its
+  // routed distance/time is better than our straight line, so keep it
+  if (state.routeVenueId === v.id && state.currentRouteGeometry && state.routeLabel) {
+    return state.routeLabel;
+  }
+  if (state.userPos) return `${fmtDist(haversine(state.userPos, v))} away`;
+  if (state.geoError === 'unsupported') {
+    // nothing to tap and nothing to turn on — do not send someone to a
+    // control that cannot help them
+    return `<span class="vd-dim">distance unavailable here</span>`;
+  }
+  if (state.geoError === 'blocked') {
+    // "tap near me" is still the right next step (the pill explains how to
+    // unblock), but it must not pretend the tap will produce a distance
+    return `<span class="vd-dim">location off — tap "near me" to fix</span>`;
+  }
+  return `<span class="vd-dim">tap "near me" for distance</span>`;
+}
+
+/* the ONE entry point for "state.userPos (or state.geoError) changed while a
+   venue sheet is open". Both the check-in button and the distance line read
+   the same state, so they are refreshed together — call this, never
+   updateCheckinButton() alone, or they drift apart again. */
+function refreshVenueLocationUi(v) {
+  updateCheckinButton(v);
+  const travelEl = document.getElementById('travelLine');
+  // toggleRoute() owns this element while a route is being measured (it
+  // writes "straight line · measuring route…" there and replaces it with
+  // the routed label when the fetch lands). A fix arriving mid-measure must
+  // not wipe that progress line, so it marks the element and we leave it be.
+  if (travelEl && travelEl.dataset.measuring !== '1') {
+    travelEl.innerHTML = travelLineHtml(v);
+  }
+}
+
 /* re-labels the check-in button from current state.userPos — must be called
    after ANY change to state.userPos while a venue sheet is open (not just
    inside openVenue()), or the button goes stale even though other
-   userPos-dependent features (like Directions) read live state and work fine */
+   userPos-dependent features (like Directions) read live state and work
+   fine. Reached through refreshVenueLocationUi() above, which also refreshes
+   the distance line this button used to be able to contradict. */
 function updateCheckinButton(v) {
   const cbtn = document.getElementById('checkinBtn');
   const lbl = document.getElementById('checkinLabel');
@@ -5163,24 +5311,9 @@ function openVenue(id) {
       </div>
     </div>`;
 
-  let travel;
-  if (isPending) {
-    travel = 'Location being confirmed';
-  } else if (hasStickyRoute) {
-    travel = state.routeLabel;
-  } else if (state.userPos) {
-    travel = `${fmtDist(haversine(state.userPos, v))} away`;
-  } else if (state.geoError === 'unsupported') {
-    // nothing to tap and nothing to turn on — do not send someone to a
-    // control that cannot help them
-    travel = `<span class="vd-dim">distance unavailable here</span>`;
-  } else if (state.geoError === 'blocked') {
-    // "tap near me" is still the right next step (the pill explains how to
-    // unblock), but it must not pretend the tap will produce a distance
-    travel = `<span class="vd-dim">location off — tap "near me" to fix</span>`;
-  } else {
-    travel = `<span class="vd-dim">tap "near me" for distance</span>`;
-  }
+  // one source for this line — see travelLineHtml(), which every later
+  // refresh goes through too (refreshVenueLocationUi())
+  const travel = travelLineHtml(v);
 
   const order = ['mon','tue','wed','thu','fri','sat','sun'];
   const todayKey = DAYS[new Date().getDay()];
@@ -5435,6 +5568,8 @@ function openVenue(id) {
 
   const cbtn = document.getElementById('checkinBtn');
   if (cbtn) {
+    // the button only — the distance line is already in the HTML just
+    // rendered above, from the same travelLineHtml() read of the same state
     updateCheckinButton(v);
     cbtn.addEventListener('click', () => doCheckin(v));
   }
@@ -5474,6 +5609,9 @@ async function toggleRoute(v) {
 
   if (dirBtn.dataset.showing === '1') {
     clearRoute();       // also resets dirBtn/dirLbl/routeAttribution and hides #routeBar
+    // the line was showing the routed "4.2 km · 12 min drive" that just
+    // stopped being true — same single source as every other refresh
+    refreshVenueLocationUi(v);
     return;
   }
 
@@ -5507,16 +5645,22 @@ async function toggleRoute(v) {
       setTimeout(() => { lbl.textContent = 'Directions'; }, 2500);
       return;
     }
-    updateCheckinButton(v);
+    // requestLocation() has already relabelled both the check-in button and
+    // the distance line from the new fix (refreshOpenVenueLocationUi())
   }
 
   lbl.innerHTML = `${loadingRing(14)}Finding route…`;
   dirBtn.disabled = true;
   // instant feedback: straight-line distance now, routed distance/time once
   // the fetch below lands — the user gets something useful in well under a
-  // second even when the ORS round trip takes several
+  // second even when the ORS round trip takes several.
+  // data-measuring claims the element for the duration: a sharper fix
+  // landing from refineLocation() mid-fetch would otherwise reset this to a
+  // plain "X away" and lose the "measuring route…" progress line (see
+  // refreshVenueLocationUi()). Cleared on every exit below, success or not.
   const travelEl = document.getElementById('travelLine');
   if (travelEl) {
+    travelEl.dataset.measuring = '1';
     travelEl.innerHTML = `${fmtDist(haversine(state.userPos, v))} away · straight line` +
       `<span class="travel-measuring">measuring route…</span>`;
   }
@@ -5526,13 +5670,18 @@ async function toggleRoute(v) {
       to_lat: v.lat, to_lng: v.lng, mode: 'driving-car',
     });
     const data = await (await fetch('/api/route?' + p)).json();
-    if (state.selectedId !== v.id) return; // sheet moved on while we waited
+    if (state.selectedId !== v.id) {
+      // sheet moved on while we waited. The element is usually detached by
+      // now, but release the claim either way so nothing can be left frozen
+      if (travelEl) delete travelEl.dataset.measuring;
+      return;
+    }
     dirBtn.disabled = false;
     if (!data.ok || !data.geometry) throw new Error('no route');
 
     const mins = Math.max(1, Math.round(data.duration_s / 60));
     const label = `${fmtDist(data.distance_m)} · ${mins} min drive`;
-    if (travelEl) travelEl.innerHTML = label;
+    if (travelEl) { delete travelEl.dataset.measuring; travelEl.innerHTML = label; }
     const attr = document.getElementById('routeAttribution');
     if (attr) attr.innerHTML = '<div class="hint">routing © OpenStreetMap contributors</div>';
 
@@ -5570,7 +5719,10 @@ async function toggleRoute(v) {
   } catch (e) {
     dirBtn.disabled = false;
     lbl.textContent = 'Route unavailable';
-    if (travelEl) travelEl.innerHTML = `${fmtDist(haversine(state.userPos, v))} away · straight line`;
+    if (travelEl) {
+      delete travelEl.dataset.measuring;
+      travelEl.innerHTML = `${fmtDist(haversine(state.userPos, v))} away · straight line`;
+    }
     setTimeout(() => {
       const l = document.getElementById('dirLbl');
       if (l && l.textContent === 'Route unavailable') l.textContent = 'Directions';
@@ -6353,7 +6505,7 @@ function bindLocate() {
     }
     if (state.selectedId) {
       const v = venueById(state.selectedId);
-      if (v) updateCheckinButton(v);
+      if (v) refreshVenueLocationUi(v);
     }
   });
 }

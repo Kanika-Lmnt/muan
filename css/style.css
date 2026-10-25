@@ -2178,6 +2178,18 @@ body {
 .sec-empty-ico { width: 120px; aspect-ratio: 700 / 400; margin: 4px auto 8px; }
 .sec-empty-ico svg { display: block; width: 100%; height: 100%; }
 
+/* Phai in the two empty states that are answers rather than errors — the
+   search miss and the distance-filter miss (mascotHtml() in app.js, poses
+   from assets/mascot/). A SEPARATE class rather than a variant of
+   .sec-empty-ico above, deliberately: the mascot's viewBox is 200x240 and
+   the 404 illustration's is 700x400, so sharing a rule would mean overriding
+   aspect-ratio AND width AND the descendant `svg` sizing, and the half of
+   that pair we forgot to restate is exactly the bug CLAUDE.md lists five
+   times. Nothing here touches .sec-empty-ico, so nothing can leak into it.
+   The <img> carries width/height 200x240, so height:auto keeps the ratio
+   with no aspect-ratio declaration at all. */
+.sec-empty-phai { display: block; width: 72px; height: auto; margin: 2px auto 10px; }
+
 /* desktop: sections panel docks right, full height */
 @media (min-width: 768px) {
   #sheet {
@@ -2473,6 +2485,18 @@ body {
   width: 69px; height: 96px; transform: none;
   filter: saturate(.35) brightness(.8); opacity: .75;
 }
+
+/* Phai idle, standing in for that unlit flame at exactly zero check-ins
+   (flameInviteHtml() in app.js). Sized to about the same optical weight as
+   the 69x96 invite flame it replaces — 80px wide on a 200x240 viewBox is
+   96px tall, so the card's height does not change and nothing below it
+   moves. Full brightness and full opacity, unlike the flame above: the
+   dimming there says "not lit yet", and a dimmed mascot would just look
+   broken. No transform/filter to neutralise here — this element never
+   matches .fl-flame, so none of that block's declarations apply to it at
+   all (CLAUDE.md: neutralise every property in a rule, or do not share the
+   rule — this does the second). */
+.fl-phai-invite { display: block; width: 80px; height: auto; margin: 0 auto; }
 
 /* first-run intro card (renderFlameIntro() in app.js) — the flame animates
    cold -> burning over ~1.2s rather than .fl-flame's usual .6s, since here

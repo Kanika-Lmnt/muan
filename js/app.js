@@ -4333,15 +4333,28 @@ const HOME_HERO = HOME_HERO_IMAGES[Math.floor(Math.random() * HOME_HERO_IMAGES.l
    style.css). */
 const TYPE_HERO_IMAGES = {
   bar: [
-    // 7th Heaven's rooftop at sunset, and the problem child of this list.
-    // Its sky runs straight through the band where the text sits, at EVERY
-    // crop — sweeping object-position from 0% to 100% moves the required
-    // veil only from .85 to .79 — so AA on the brand and English lines costs
-    // .84, and at .84 the sunset it was chosen for is gone. Shipped as given
-    // because it was the id asked for; flagged in the report as the one
-    // image worth swapping for a darker 7th Heaven shot.
-    { photoDark: 'v1789470832/7th_2_slovtd', photoLight: 'v1789470832/7th_2_slovtd',
-      veilDark: .84, veilLight: .84, objectPosition: '50% 50%' },
+    // MADAME's red velvet lounge, in place of 7th Heaven's rooftop. 7th
+    // Heaven's sky ran straight through the band where the text sits at
+    // EVERY crop (a 0%–100% object-position sweep moved the required veil
+    // only from .85 to .79), so AA cost .84, and at .84 the sunset it was
+    // chosen for was gone — it read as a dim terrace.
+    //
+    // This one is the opposite problem to have: a curtained room lit in
+    // near-black reds, whose darkest content sits exactly where the text
+    // does. It clears AA at a veil of ZERO — measured, all four lines, all
+    // four boxes. .30 is shipped as margin, not as a requirement: it holds
+    // the text on the same kind of surface the other entries give it and
+    // still leaves every line at 8:1 or better, against a 3:1/4.5:1
+    // threshold. Nothing here is near the edge, so the red survives intact.
+    //
+    // Centre crop, though the source is the only PORTRAIT image in this
+    // list (900x1125) and so loses the most to cover: a hero shows 41–55%
+    // of its height. The middle is the half worth keeping — shell chair,
+    // MADAME poster, the gold lamp — and the sweep has two troughs either
+    // side of it (.58 at 15%, .24 at 65%), so a nudge off centre is not
+    // free. Confirmed by opening the rendered crop, not by trusting the id.
+    { photoDark: 'v1789470832/madam5_dgrva1', photoLight: 'v1789470832/madam5_dgrva1',
+      veilDark: .30, veilLight: .30, objectPosition: '50% 50%' },
     // Tipsy Elephant, neon-lit room. Its own "Tipsy Elephant" neon sits
     // upper-left in the source, which is where this hero puts its own text —
     // a centre crop moves it out of frame, so the two never overlap. .70 is
@@ -4370,13 +4383,24 @@ const TYPE_HERO_IMAGES = {
       veilDark: .70, veilLight: .70, objectPosition: '50% 50%' },
   ],
   event: [
-    // The night market, lit and busy. NOTE: this asset carries a visible
-    // "(C)AsiaWebDirect" watermark in its bottom-right corner — see the
-    // report for this change. It is used here because it was the id given,
-    // but it is a third party's photograph and the crop does not and must
-    // not hide the credit.
-    { photoDark: 'v1785192698/night_market_hrrub8', photoLight: 'v1785192698/night_market_hrrub8',
-      veilDark: .84, veilLight: .84, objectPosition: '50% 50%' },
+    // PLACEHOLDER, until Kar has an Events photograph of his own: this is
+    // the All tab's That Luang sunset, the same id HOME_HERO_IMAGES uses,
+    // at the same .62. It replaced the night market, which carried a
+    // visible "(C)AsiaWebDirect" watermark — a third party's press photo,
+    // which the project's photo rule does not allow however it is cropped.
+    //
+    // .62 is the All hero's number, not a separately tuned one, and that is
+    // deliberate. The Events hero is the SAME box as the All hero
+    // (clamp(210px, 32vh, 270px) — there is no per-tab size) over the same
+    // pixels; only the text differs, and "ອີເວັນ / Events in Vientiane" is
+    // strictly narrower than "ໄປໃສດີ / Where should we go tonight?", so it
+    // covers a subset of what the All measurement already covered. Measured
+    // for this crop anyway: the Events strings alone clear AA from .53, so
+    // .62 carries ~.09 of headroom, and one number for one photograph
+    // cannot drift away from the other.
+    { photoDark: 'v1789486872/ChatGPT_Image_Sep_15_2026_10_39_23_PM_mnfpiq',
+      photoLight: 'v1789486872/ChatGPT_Image_Sep_15_2026_10_39_23_PM_mnfpiq',
+      veilDark: .62, veilLight: .62, objectPosition: '50% 50%' },
   ],
 };
 

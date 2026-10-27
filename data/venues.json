@@ -487,9 +487,7 @@
       "area": "Chao Anouvong Park, riverfront",
       "short": "Riverside tents — clothes, souvenirs, crafts",
       "description": "The nightly riverside market at Chao Anouvong Park — red-tent stalls with clothes, souvenirs and crafts. Busiest Friday and Saturday evenings, when street performers often join. A standing anchor of the riverfront night. The food stalls are a separate market across the road — don't come to these tents expecting dinner.",
-      "photos": [
-        "v1785192698/night_market_hrrub8"
-      ],
+      "photos": [],
       "hours": {
         "mon": "18:00-22:00",
         "tue": "18:00-22:00",
@@ -1080,6 +1078,69 @@
         "tucked-away"
       ],
       "logo": "v1787658196/chocolalogo_xzigjy"
+    },
+    {
+      "id": "moonlight-lounge",
+      "name": "Moonlight Lounge",
+      "short_name": null,
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9645272,
+      "lng": 102.6088799,
+      "area": null,
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9645272,102.6088799"
+      },
+      "verified": false,
+      "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
+      "pin_status": "placed"
+    },
+    {
+      "id": "cocoon-bar",
+      "name": "Cocoon Bar",
+      "short_name": null,
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9659403,
+      "lng": 102.6053832,
+      "area": null,
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9659403,102.6053832"
+      },
+      "verified": false,
+      "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
+      "pin_status": "placed"
+    },
+    {
+      "id": "office-bar-tapas",
+      "name": "The Office Bar & Tapas",
+      "short_name": null,
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9676534,
+      "lng": 102.6011558,
+      "area": null,
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9676534,102.6011558"
+      },
+      "verified": false,
+      "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
+      "pin_status": "placed"
     }
   ]
 }

@@ -3266,6 +3266,187 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
   #sheet.dragging { overflow: hidden; }  /* internal list can't move */
 }
 
+/* ============ toast (showToast() in js/app.js) ============
+   A transient confirmation that is not attached to the control that caused
+   it — the share action's copy fallback fires from a 32px icon button with
+   nowhere to put a sentence.
+
+   Appended to #app rather than document.body so --nav-space resolves: that
+   is the single declared number for what the floating bottom nav occupies
+   (see the mobile shell block below, where it is defined), and it is the
+   number every other bottom-anchored thing in this file already reads. On
+   desktop there is no nav and no --nav-space, so the calc() falls back to
+   its own 0px and the toast sits 24px off the bottom. One rule, both
+   layouts, no media query to keep in sync.
+
+   Hidden by opacity + translate + pointer-events rather than display:none,
+   because it has to animate in and out; visibility is included so it leaves
+   the a11y tree between messages rather than being a permanently present
+   empty live region. */
+.toast {
+  position: fixed; z-index: 62;
+  left: 50%; bottom: calc(var(--nav-space, 0px) + 24px);
+  max-width: min(calc(100vw - 32px), 420px);
+  padding: 11px 16px; border-radius: 12px;
+  background: var(--plate); color: var(--bone);
+  box-shadow: var(--plate-shadow);
+  font-size: 13px; font-weight: 600; line-height: 1.4; text-align: center;
+  pointer-events: none; visibility: hidden;
+  opacity: 0; transform: translate(-50%, 10px);
+  transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
+}
+/* every property the base rule animates is restated here, not just opacity
+   — including the visibility delay, which has to flip to 0s on the way IN
+   or the toast stays invisible for its whole entrance (CLAUDE.md: a rule is
+   neutralised per property, never per rule) */
+.toast.show {
+  visibility: visible; opacity: 1; transform: translate(-50%, 0);
+  transition: opacity .2s ease, transform .2s ease, visibility 0s linear 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.show { transition: none; transform: translate(-50%, 0); }
+}
+
+/* ============ the wheel (openWheel() in js/app.js) ============
+   Same overlay lifecycle as .vibe-pop above and .lightbox: a fresh element
+   per open, appended to document.body, fully removed on close. Not nested
+   in #sheet for the same reason they are not — none of #sheet's sticky/
+   swipe/collapse machinery can reach it, so the two cannot fight.
+
+   A bottom sheet at EVERY width, not a centred dialog on desktop. Two
+   reasons: it matches .vibe-pop, which is the app's existing popup shape;
+   and the wheel's desktop audience is specifically someone who followed a
+   shared ?wheel= link, so the layout they get should be the one that was
+   designed and tested, not a second one that only they ever see. */
+.wheel-pop {
+  position: fixed; inset: 0; z-index: 59; display: flex;
+  align-items: flex-end; justify-content: center;
+  background: rgba(10,8,14,0); transition: background .2s ease-out;
+}
+.wheel-pop.show { background: rgba(10,8,14,.72); }
+.wheel-sheet {
+  width: 100%; max-width: 480px; max-height: 92vh;
+  background: var(--ink2); border-radius: 22px 22px 0 0;
+  box-shadow: 0 -12px 40px rgba(0,0,0,.4);
+  display: flex; flex-direction: column; overflow: hidden;
+  transform: translateY(100%); transition: transform .24s ease-in;
+}
+.wheel-pop.show .wheel-sheet {
+  transform: translateY(0);
+  transition: transform .32s cubic-bezier(.34,1.3,.5,1);
+}
+.wheel-grip {
+  width: 44px; height: 5px; background: var(--ink4); border-radius: 3px;
+  margin: 10px auto 4px; flex-shrink: 0;
+}
+.wheel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 6px 18px 12px; border-bottom: 1px solid var(--ink3); flex-shrink: 0;
+}
+.wheel-title { font-size: 15px; font-weight: 700; color: var(--bone); }
+/* same treatment .vibe-pop-title gives its Lao half — English leads, Lao
+   supports, rather than both shouting at 700 */
+.wheel-title .lao { font-weight: 400; opacity: .78; }
+.wheel-close {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: var(--ink3); color: var(--mute); font-size: 14px; cursor: pointer;
+}
+.wheel-body {
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+
+/* the dial and its pointer share one positioning context. padding-top is
+   what Phai stands in — the mascot is absolutely positioned and would
+   otherwise overlap the header. */
+.wheel-stage {
+  position: relative; display: flex; justify-content: center;
+  padding-top: 40px;
+}
+/* min(), not a breakpoint: 72vw at 320px is 230px and the cap takes over at
+   about 361px, so the dial fills a small phone and stops growing on a large
+   one or on desktop. The 32vh term is for SHORT screens: at 320x640 the
+   72vw dial (230px) plus the result card overflowed the sheet and the
+   buttons scrolled out of view; 32vh brings it to ~205px there and is
+   above the 260px cap on a 390x844 phone or an 800px-tall desktop. */
+.wheel-dial { width: min(72vw, 260px, 32vh); height: auto; display: block; }
+/* the rotation reference has to be the dial's centre in USER units, not the
+   SVG origin (which is what an SVG element's transform-origin defaults to)
+   — view-box makes 100px 100px mean the middle of the 200x200 viewBox.
+   No transition declared here: spinWheel() sets transition AND transform
+   together from JS, so reduced motion has no leftover rule to neutralise. */
+.wheel-spinner { transform-box: view-box; transform-origin: 100px 100px; }
+
+/* Phai as the pointer, standing on the dial's 12 o'clock. The ::after notch
+   is the precise bit — a 52px mascot has no single pixel that obviously
+   means "here", and the winner has to be unambiguous at 320px. --bone is
+   the one token that reads against BOTH slice fills in BOTH themes (cream
+   on night over flame or ink4; near-black on day over either), which is
+   exactly why the notch is not itself coral. */
+.wheel-phai {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 2; line-height: 0;
+}
+.wheel-phai img { display: block; width: 46px; height: auto; }
+.wheel-phai::after {
+  content: ''; position: absolute; left: 50%; bottom: -9px;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-top: 11px solid var(--bone);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.45));
+}
+
+.wheel-note {
+  margin-top: 14px; font-size: 12.5px; line-height: 1.5;
+  color: var(--secondary); text-align: center;
+}
+.wheel-note-empty { color: var(--bone); font-weight: 600; margin-top: 24px; }
+
+.wheel-result:empty { display: none; }
+.wheel-result { margin-top: 16px; }
+
+/* the result card. Its own shape rather than .card.row-card, which is only
+   declared inside the mobile breakpoint and would render unstyled on the
+   desktop a shared link lands on (see wheelResultCardHtml() in app.js). */
+.wheel-card {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 0; border: none; border-radius: 14px; overflow: hidden;
+  background: var(--surface); box-shadow: var(--card-shadow);
+  cursor: pointer; text-align: left; font-family: var(--font);
+  animation: wheel-card-in .28s ease-out both;
+}
+@keyframes wheel-card-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .wheel-card { animation: none; } }
+.wheel-card-thumb { flex: 0 0 72px; height: 72px; line-height: 0; }
+.wheel-card-thumb img { width: 72px; height: 72px; object-fit: cover; display: block; }
+.wheel-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.wheel-card-name {
+  font-size: 15px; font-weight: 700; color: var(--bone);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wheel-card-sub {
+  font-size: 12.5px; color: var(--secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wheel-card-go {
+  flex-shrink: 0; padding-right: 14px; font-size: 12.5px; font-weight: 700;
+  color: var(--flame-text);
+}
+
+.wheel-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.wheel-btn {
+  height: 48px; border: none; border-radius: 14px; cursor: pointer;
+  font-family: var(--font); font-weight: 700; font-size: 14px;
+}
+.wheel-btn:disabled { opacity: .6; cursor: default; }
+/* the one primary action in this overlay — same flame fill and solid bottom
+   edge as .fl-invite-btn and .cel-done, because it is the same kind of ask */
+.wheel-btn-go { background: var(--flame); color: var(--on-flame); box-shadow: 0 4px 0 #C6432A; }
+.wheel-btn-go:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #C6432A; }
+.wheel-btn-2nd { background: var(--ink3); color: var(--bone); }
+[data-theme="light"] .wheel-btn-go { box-shadow: 0 4px 0 #AE3520; }
+[data-theme="light"] .wheel-btn-go:active:not(:disabled) { box-shadow: 0 1px 0 #AE3520; }
+
 /* ============ mobile: three-screen shell (Home / Map / You) ============
    #app's data-screen attribute (set by setMobileScreen() in app.js) picks
    which screen is showing; .sheet-detail (set by setSheetView()) marks a
@@ -3812,7 +3993,7 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
 /* Surprise me — the only quick action left (Open now/Near me/Tonight were
    removed: sorting + location are default behaviour now, not opt-in
    buttons, and Tonight duplicated the Tonight section/Events chip — see
-   surpriseMeHtml() in app.js). Markup always renders so there's one code
+   wheelButtonHtml() in app.js). Markup always renders so there's one code
    path; hidden here by default and shown only inside the mobile query below */
 .surprise-btn { display: none; }
 

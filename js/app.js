@@ -566,6 +566,19 @@ async function boot() {
     // gets to read it. Reading location.search any later than this line
     // returns empty, which is exactly what broke every share link.
     const deepLinkId = new URLSearchParams(location.search).get('v');
+    /* ?wheel=<id,id,…>&seed=<n> — a shared wheel (see shareWheel()). Read
+       here for exactly the same reason as ?v= above: renderHomeSheet()
+       clears the query string back to location.pathname, and it runs well
+       before this function gets to the deep-link block below.
+       A malformed seed is not a reason to refuse the link — the ids are the
+       interesting part — so it falls back to 0, which is a perfectly good
+       seed and still deterministic for everyone who opens that same link. */
+    const wheelParam = new URLSearchParams(location.search).get('wheel');
+    const wheelSeed = Number(new URLSearchParams(location.search).get('seed'));
+    const deepLinkWheel = wheelParam
+      ? { ids: wheelParam.split(',').map(s => s.trim()).filter(Boolean),
+          seed: Number.isFinite(wheelSeed) ? wheelSeed : 0 }
+      : null;
 
     placeChips();
     window.addEventListener('resize', placeChips);
@@ -861,6 +874,15 @@ async function boot() {
       if (state.map && dv.lat != null && dv.lng != null) {
         state.map.flyTo({ center: [dv.lng, dv.lat], zoom: 15.5 });
       }
+    } else if (deepLinkWheel && deepLinkWheel.ids.length) {
+      /* a shared wheel. Deliberately in the `else` — ?v= wins if a URL
+         somehow carries both, because a venue link is a more specific ask
+         than a wheel and the wheel would cover the sheet it just opened.
+         openWheel() resolves the ids against state.venues, which by this
+         point is the bundled mirror reconciled against /api/venues, so an
+         id that is simply unknown to this deploy is dropped rather than
+         drawn as a blank slice. */
+      openWheel(deepLinkWheel);
     }
 
     // never let a stuck basemap (CDN outage, blocked domain, ad-blocker,
@@ -1216,8 +1238,8 @@ function loadChunk(name) {
    show up in testing on a fast connection.
    `where` is either a text element to write the message into (the avatar
    uploader's #pfpErr) or the control that was tapped, whose label is
-   flashed and put back — the same transient-label pattern toggleRoute() and
-   flashSurpriseMessage() already use. It is NOT optional in practice: the
+   flashed and put back — the same transient-label pattern toggleRoute()
+   already uses. It is NOT optional in practice: the
    three owner call sites passed nothing, so a failed js/owner.js made
    "List your venue", "Manage" and "Pending venues" do literally nothing on
    tap. Exactly the outcome the paragraph above was written to prevent. */
@@ -1236,8 +1258,8 @@ function withChunk(name, fn, where) {
 
 /* swaps an element's content for `msg`, then puts the original back — unless
    something else has changed it in the meantime, in which case the newer
-   text wins. Generalised out of flashSurpriseMessage(), which is now one
-   caller of this rather than its own copy of it.
+   text wins. Generalised out of the old Surprise me button's
+   flashSurpriseMessage(), since removed along with that button.
    Detaches and re-attaches the ORIGINAL child nodes rather than saving and
    restoring textContent or innerHTML. Some of the elements this is used on
    are buttons with element children (.fl-manage-item carries its own
@@ -1251,6 +1273,41 @@ function flashLabel(el, msg, ms = 2500) {
   setTimeout(() => {
     if (el.isConnected && el.textContent === msg) el.replaceChildren(...original);
   }, ms);
+}
+
+/* A transient line of confirmation that is NOT attached to the control that
+   caused it. flashLabel() above is the right tool when the control itself
+   can carry the message (the Directions button saying "Route unavailable");
+   this is for the cases where it cannot — the share action's copy fallback
+   fires from a 32px icon button with no room for a sentence, and from
+   inside the wheel overlay where the button scrolls out of view.
+
+   Appended to #app, not document.body, so `--nav-space` resolves: that is
+   the single declared number for what the floating bottom nav occupies (see
+   style.css), and a toast sitting on top of the nav is the bug that number
+   exists to prevent. Desktop has no nav and no --nav-space, so the fallback
+   in the calc() is what applies there.
+
+   One at a time, by id: a second call replaces the first rather than
+   stacking two pills on top of each other. role="status" (not "alert") so a
+   screen reader announces it without interrupting — nothing here is urgent. */
+let toastTimer = null;
+function showToast(msg, ms = 2800) {
+  const host = document.getElementById('app') || document.body;
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    host.appendChild(el);
+  }
+  el.textContent = msg;
+  // reflow between remove and add, or re-showing while one is already up
+  // restarts nothing and the new message appears without its entrance
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // Google Identity Services used to be a plain <script async defer> in
@@ -2867,35 +2924,384 @@ function rowCard(v, extraLine) {
   </div>`;
 }
 
-// "Surprise me": a random OPEN venue of `filter`'s type (a chip type in
-// VENUE_TYPE_META — see surpriseMeHtml(), the only filters it shows for),
-// weighted toward nearby when location is known (nearest 8 rather than a
-// flat citywide random, so "near" means something) — requests location
-// first if it isn't already known, same as warmLocation()'s permission-
-// respecting pattern (never triggers the browser prompt from a background
-// tap, only from this explicit one)
-async function quickSurpriseMe(filter) {
-  if (!state.userPos) await requestLocation();
-  const candidates = state.venues.filter(v =>
-    v.pin_status !== 'pending' && v.lat != null && v.lng != null &&
-    v.type === filter && openStatus(v).open);
-  if (!candidates.length) { flashSurpriseMessage('nothing open right now — try later'); return; }
-  let pool = candidates;
-  if (state.userPos) {
-    pool = [...candidates]
-      .sort((a, b) => haversine(state.userPos, a) - haversine(state.userPos, b))
-      .slice(0, Math.min(8, candidates.length));
-  }
-  openVenue(pool[Math.floor(Math.random() * pool.length)].id);
+/* ---------- the wheel ----------
+   REPLACES "Surprise me" outright — there is no second random feature. The
+   old quickSurpriseMe() picked one of the nearest 8 open venues of the
+   current type and navigated straight to it; the wheel picks from the same
+   set, by the same rule, and the only thing that changed is that the pick
+   is now something you can watch happen and hand to other people.
+
+   What a wheel IS, precisely, because two things are easy to conflate:
+     the POOL    the venues the wheel is about, in order. For a local spin
+                 that is wheelCandidates(); for a shared link it is the ids
+                 in the URL, in the order they were written.
+     the SLICES  the pool minus anything that has since closed, which is
+                 what actually gets drawn and what can be won.
+
+   No accounts, no backend, no state on a server: a shared wheel is entirely
+   described by its URL. */
+
+const WHEEL_MAX_SLICES = 8;
+
+/* mulberry32 — a 32-bit seeded PRNG, ~10 lines, no dependencies. The whole
+   group-wheel feature rests on this: two phones opening the same link have
+   to draw the same answer, and Math.random() cannot do that. Chosen over
+   writing something ad-hoc because an ad-hoc generator with a bad period
+   would bias the draw in a way nobody would notice until someone complained
+   that the wheel "always picks Status". */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-// swaps the Surprise me button's own label for a couple seconds instead of
-// tapping doing nothing — same transient-label pattern as toggleRoute()'s
-// "Route unavailable" state. Guards on the label still showing this exact
-// message before reverting, in case a second tap (or leaving the screen and
-// coming back) already moved it on to something else.
-function flashSurpriseMessage(msg) {
-  flashLabel(document.querySelector('[data-surprise-me] .surprise-label'), msg);
+// Fisher-Yates, driven by a seeded rng so the order is reproducible.
+function seededShuffle(list, rng) {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/* Who is allowed on the wheel: open NOW, of the current filter's type, and
+   inside the distance filter if one is set.
+
+   "Open now" is not a nicety here — the wheel's output is "go to this one",
+   and sending somebody to a shut bar is the whole failure mode. withinDistance()
+   is the type lists' own filter and already returns true when no distance is
+   chosen or there is no fix, so this needs no second copy of that logic.
+
+   Capped at WHEEL_MAX_SLICES from the front of sortForDisplay(), which
+   orders open-then-nearest — so an over-full wheel keeps the NEAREST eight,
+   which is the same "near means something" weighting quickSurpriseMe() had. */
+function wheelCandidates(filter) {
+  return sortForDisplay(state.venues.filter(v =>
+    v.pin_status !== 'pending' && v.lat != null && v.lng != null &&
+    v.type === filter && openStatus(v).open && withinDistance(v)
+  )).slice(0, WHEEL_MAX_SLICES);
+}
+
+/* The draw. Deterministic in (seed, pool order), and deliberately NOT a
+   plain index into the slices.
+
+   The naive version — `slices[Math.floor(rng() * slices.length)]` — is
+   stable only while the slice list is. Drop one closed venue out of the
+   middle and every index after it shifts, so a friend opening the link ten
+   minutes later gets a different answer for a reason that has nothing to do
+   with the venue they got. Shuffling the POOL instead and taking the first
+   entry that is still open means a closure only ever skips past one name:
+   everyone opening the link after it still agrees with each other, and they
+   agree with everyone before it unless the closure was the winner itself.
+
+   The honest limit, which no amount of cleverness removes: this is a
+   function of what is open at the moment of opening. If a venue closes
+   between two friends opening the same link, they can land on different
+   answers. Pinning the answer instead would mean sending the second friend
+   to a venue that has shut, which is worse. */
+function wheelWinner(pool, slices, seed) {
+  const open = new Set(slices.map(v => v.id));
+  return seededShuffle(pool, mulberry32(seed)).find(v => open.has(v.id)) || null;
+}
+
+/* The dial, as SVG rather than a CSS conic-gradient: conic-gradient paints
+   the wedges but gives nothing to attach a label to, and the labels are the
+   point — a wheel of unnamed colours is a loading spinner.
+
+   COLOUR (CLAUDE.md design tokens): coral and neutral only. --gold is
+   reserved for rewards/badges, --violet for events and --teal for open-now
+   status, and a wheel is none of those three — borrowing one would quietly
+   un-reserve it. So slices alternate --flame and --ink4, with --on-flame and
+   --bone as their respective label colours (both measured against those
+   exact fills, see the token notes in style.css).
+
+   Alternating breaks down on an odd number of slices — the first and last
+   are neighbours and get the same fill — so every wedge also carries a
+   --ground stroke. That makes the boundary structural rather than something
+   the colour rhythm has to be relied on for, and it is why an odd wheel
+   still reads correctly. */
+function wheelDialHtml(slices) {
+  const R = 96, CX = 100, CY = 100;
+  const step = 360 / slices.length;
+  // clock degrees (0 = 12 o'clock, growing clockwise) -> SVG x/y
+  const pt = (deg, r) => {
+    const a = (deg - 90) * Math.PI / 180;
+    return [(CX + r * Math.cos(a)).toFixed(2), (CY + r * Math.sin(a)).toFixed(2)];
+  };
+  return slices.map((v, i) => {
+    const from = i * step, to = (i + 1) * step, mid = from + step / 2;
+    const [x1, y1] = pt(from, R);
+    const [x2, y2] = pt(to, R);
+    const large = step > 180 ? 1 : 0;
+    const fill = i % 2 === 0 ? 'var(--flame)' : 'var(--ink4)';
+    const ink = i % 2 === 0 ? 'var(--on-flame)' : 'var(--bone)';
+    const [lx, ly] = pt(mid, R * 0.62);
+    /* the label runs along its own radius, which means rotating it by
+       (mid - 90): SVG rotate() measures clockwise from +x, and clock angle
+       `mid` points that way.
+       Text is right-way-up only while that rotation stays within ±90° of
+       horizontal, i.e. while mid is on the RIGHT half of the dial (0..180).
+       Everything on the left half is flipped end-for-end; text-anchor:middle
+       keeps it centred on the same point either way, so the flip costs no
+       geometry. (Measured, after getting this wrong once with a
+       `mid > 90 && mid < 270` test: that flipped the two right-hand slices
+       that were already fine and left the two left-hand ones upside down —
+       visible on an 8-slice wheel as Status/Rustic inverted.) */
+    const rot = mid > 180 ? mid + 180 : mid;
+    const name = v.short_name || v.name;
+    const label = name.length > 15 ? name.slice(0, 14) + '…' : name;
+    const size = slices.length > 6 ? 8.5 : 10;
+    return `<g>
+      <path d="M${CX} ${CY} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} Z"
+            fill="${fill}" stroke="var(--ground)" stroke-width="1.5"/>
+      <text x="${lx}" y="${ly}" fill="${ink}" font-size="${size}" font-weight="700"
+            text-anchor="middle" dominant-baseline="central"
+            transform="rotate(${(rot - 90).toFixed(2)} ${lx} ${ly})">${esc(label)}</text>
+    </g>`;
+  }).join('');
+}
+
+/* the compact card the result lands on. Not rowCard(): that one's layout
+   (.card.row-card) is declared inside style.css's max-width:767px block, so
+   on desktop — which is exactly where a shared wheel link gets opened — it
+   would render unstyled. Small enough to be its own thing, and it reuses the
+   same thumbnail fallback (venueTileUri) and the same openStatus() label as
+   every other card in the app. */
+function wheelResultCardHtml(v) {
+  const st = openStatus(v);
+  const thumb = (v.photos && v.photos.length)
+    ? `<img src="${esc(cloudinaryUrl(v.photos[0], 200))}" alt="" loading="lazy">`
+    : `<img src="${venueTileUri(v.short_name || v.name, v.type, false)}" alt="" loading="lazy">`;
+  return `
+    <button type="button" class="wheel-card" data-wheel-open="${esc(v.id)}">
+      <span class="wheel-card-thumb">${thumb}</span>
+      <span class="wheel-card-body">
+        <span class="wheel-card-name">${esc(v.short_name || v.name)}</span>
+        <span class="wheel-card-sub">${esc(cap(st.label))}${v.area ? ' · ' + esc(v.area) : ''}</span>
+      </span>
+      <span class="wheel-card-go">Open ›</span>
+    </button>`;
+}
+
+let wheelPop = null;
+
+function closeWheel() {
+  if (!wheelPop) return;
+  const { ov } = wheelPop;
+  document.removeEventListener('keydown', wheelKeydown);
+  ov.classList.remove('show');
+  setTimeout(() => ov.remove(), 240);
+  wheelPop = null;
+}
+function wheelKeydown(e) { if (e.key === 'Escape') closeWheel(); }
+
+/* Entry point for both modes.
+     openWheel()                      a local spin off the current filter
+     openWheel({ ids, seed })         a shared wheel from ?wheel=&seed=
+
+   The <2-candidate rule is handled differently per mode on purpose. A local
+   tap with nothing to spin gets a toast and NO overlay: opening a dialog to
+   say "there is nothing here" is worse than saying it where the user is
+   looking. A shared link always opens the overlay even when it has nothing
+   left to spin — somebody deliberately followed that link, and silence (or a
+   toast on a screen they did not ask for) would read as a broken link. */
+function openWheel(opts = {}) {
+  const shared = Array.isArray(opts.ids);
+  const filter = opts.filter || state.filter;
+
+  // POOL: link order for a shared wheel, nearest-open for a local one.
+  // Unknown ids are ignored rather than rendered as a blank slice — CLAUDE.md
+  // has no place for a venue we cannot name. Pending venues go too: they have
+  // no confirmed location, so "go here" is not a thing we can say yet.
+  const pool = shared
+    ? opts.ids.map(venueById).filter(Boolean)
+        .filter(v => v.pin_status !== 'pending' && v.lat != null && v.lng != null)
+        .slice(0, WHEEL_MAX_SLICES)
+    : wheelCandidates(filter);
+
+  const slices = pool.filter(v => openStatus(v).open);
+  const closedCount = pool.length - slices.length;
+
+  if (!shared && slices.length < 2) {
+    const one = (VENUE_TYPE_META[filter]?.one || 'place').toLowerCase();
+    showToast(slices.length === 1
+      ? `Only one ${one} open right now — ${slices[0].short_name || slices[0].name}`
+      : `No ${one}s open right now — nothing to spin yet`);
+    return;
+  }
+
+  // a fresh seed per local spin; the shared one comes off the URL so every
+  // phone that opens the link runs the identical draw
+  const seed = Number.isFinite(opts.seed) ? opts.seed : (Math.random() * 1e9) | 0;
+  const winner = wheelWinner(pool, slices, seed);
+  const spinnable = slices.length >= 2 && !!winner;
+
+  closeWheel();
+  const title = `Which one ${isNight() ? 'tonight' : 'today'}? · <span class="lao">ເລືອກບ່ອນໃດດີ?</span>`;
+
+  /* The closed note, verbatim from the brief's shape. Only ever shown for a
+     shared wheel, because a local one is built from open venues and can
+     never have a closed slice to report. It names a number rather than the
+     venues: the point is "this link is a bit stale", not a roll-call. */
+  const closedNote = closedCount
+    ? `<div class="wheel-note">${closedCount === 1
+        ? '1 place on this wheel is closed now'
+        : `${closedCount} places on this wheel are closed now`} — ${closedCount === 1 ? 'it has' : 'they have'} been left off.</div>`
+    : '';
+
+  const emptyNote = spinnable ? '' :
+    `<div class="wheel-note wheel-note-empty">${slices.length === 1
+      ? 'Only one place on this wheel is open right now, so there is nothing to spin.'
+      : 'Nothing on this wheel is open right now.'}</div>`;
+
+  const ov = document.createElement('div');
+  ov.className = 'wheel-pop';
+  ov.innerHTML = `
+    <div class="wheel-sheet" role="dialog" aria-modal="true" aria-label="Spin the wheel">
+      <div class="wheel-grip"></div>
+      <div class="wheel-head">
+        <span class="wheel-title">${title}</span>
+        <button type="button" class="wheel-close" aria-label="Close">✕</button>
+      </div>
+      <div class="wheel-body">
+        ${spinnable ? `
+        <div class="wheel-stage">
+          <span class="wheel-phai">
+            <img src="assets/mascot/phai-looking-over.svg" alt="" width="200" height="240" draggable="false">
+          </span>
+          <svg class="wheel-dial" viewBox="0 0 200 200" aria-hidden="true">
+            <g class="wheel-spinner">${wheelDialHtml(slices)}</g>
+            <circle cx="100" cy="100" r="13" fill="var(--ground)" stroke="var(--ink4)" stroke-width="1.5"/>
+          </svg>
+        </div>` : ''}
+        ${closedNote}
+        ${emptyNote}
+        ${spinnable ? `
+        <div class="wheel-result" aria-live="polite"></div>
+        <div class="wheel-actions">
+          <button type="button" class="wheel-btn wheel-btn-go" data-wheel-spin>Spin</button>
+          <button type="button" class="wheel-btn wheel-btn-2nd" data-wheel-share>Share this wheel</button>
+        </div>` : `
+        <div class="wheel-actions">
+          <button type="button" class="wheel-btn wheel-btn-2nd" data-wheel-browse>See what's open</button>
+        </div>`}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  // double rAF — same reason as showMoodIntro()/openVibePop(): a single one
+  // let this append+show sequence get stuck mid-transition
+  requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
+
+  wheelPop = { ov, pool, slices, seed, winner, shared, spun: false };
+
+  ov.addEventListener('click', (e) => { if (e.target === ov) closeWheel(); });
+  ov.querySelector('.wheel-close').addEventListener('click', closeWheel);
+  document.addEventListener('keydown', wheelKeydown);
+  ov.querySelector('[data-wheel-browse]')?.addEventListener('click', () => {
+    closeWheel();
+    if (!shared) return;
+    renderHomeSheet();
+  });
+  ov.querySelector('[data-wheel-spin]')?.addEventListener('click', () => spinWheel());
+  ov.querySelector('[data-wheel-share]')?.addEventListener('click', () => shareWheel());
+}
+
+/* The spin.
+
+   The dial is rotated so the WINNER's slice centre ends under Phai at 12
+   o'clock. In clock degrees a slice's centre sits at (i + 0.5) * step, and a
+   clockwise CSS rotation of R brings the slice originally at -R to the top —
+   so R = 360 - centre, plus whole turns for the travel. The jitter comes off
+   the same seeded rng, so it is not a second source of randomness that could
+   disagree with the draw: it only moves the landing point inside the slice
+   it has already won, and two phones jitter identically.
+
+   Reduced motion gets the SAME final transform with no transition at all,
+   not a shortened one — the result appears immediately. Both properties are
+   set together (CLAUDE.md: neutralising transform does not neutralise
+   transition), and because this is done from JS rather than a @media block
+   there is no rule left behind to fight. */
+function spinWheel() {
+  if (!wheelPop || wheelPop.spun || !wheelPop.winner) return;
+  const { ov, slices, seed, winner, shared } = wheelPop;
+  wheelPop.spun = true;
+
+  const idx = slices.findIndex(v => v.id === winner.id);
+  const step = 360 / slices.length;
+  const jitterRng = mulberry32(seed ^ 0x9E3779B9);
+  const jitter = (jitterRng() - 0.5) * step * 0.6;
+  const target = 360 * 5 + (360 - ((idx + 0.5) * step + jitter));
+
+  const g = ov.querySelector('.wheel-spinner');
+  const btn = ov.querySelector('[data-wheel-spin]');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Spinning…'; }
+
+  if (g) {
+    g.style.transition = reduced ? 'none' : 'transform 3s cubic-bezier(.16,.84,.26,1)';
+    g.style.transform = `rotate(${target.toFixed(2)}deg)`;
+  }
+
+  const land = () => {
+    if (!wheelPop || wheelPop.ov !== ov) return;   // closed mid-spin
+    const phai = ov.querySelector('.wheel-phai img');
+    if (phai) phai.src = 'assets/mascot/phai-delighted.svg';
+    const res = ov.querySelector('.wheel-result');
+    if (res) res.innerHTML = wheelResultCardHtml(winner);
+    res?.querySelector('[data-wheel-open]')?.addEventListener('click', (e) => {
+      const id = e.currentTarget.dataset.wheelOpen;
+      closeWheel();
+      openVenue(id);
+    });
+    if (btn) {
+      btn.disabled = false;
+      // a shared wheel has exactly one answer — that is the feature, so there
+      // is nothing to spin again. A local one re-rolls with a fresh seed.
+      if (shared) { btn.remove(); }
+      else {
+        btn.textContent = 'Spin again';
+        btn.classList.remove('wheel-btn-go');
+        btn.classList.add('wheel-btn-2nd');
+        btn.onclick = () => openWheel({ filter: state.filter });
+      }
+    }
+  };
+  if (reduced) land(); else setTimeout(land, 3050);
+}
+
+/* "Share this wheel" — /?wheel=<id,id,…>&seed=<n>, and nothing else. The
+   whole wheel travels in the URL: no row written anywhere, no id to look up,
+   nothing that can expire. Whoever opens it re-runs the identical draw
+   locally (see wheelWinner()).
+
+   The ids are the POOL, not the slices. wheelWinner() shuffles the pool, so
+   a recipient has to shuffle the same list to land where the sharer did —
+   re-sharing a link with a closed venue dropped would change the shuffle
+   and with it the answer. For a local spin the two are the same list (the
+   pool is built from open venues); for a re-shared link the closed ones
+   ride along and each recipient drops them with the usual note. seed is the
+   one already used here, so the sharer and every recipient see the same
+   answer — including the sharer, who may have spun before sharing. */
+function shareWheel() {
+  if (!wheelPop) return;
+  const { pool, seed } = wheelPop;
+  const url = `${location.origin}/?wheel=${pool.map(v => encodeURIComponent(v.id)).join(',')}&seed=${seed}`;
+  // TODO(lao): "ເລືອກບ່ອນໃດດີ?" is the phrasing given in the task, reused
+  // here and in the overlay title and functions/index.js's og block so the
+  // link, the preview and the page all say the same thing. Not yet checked
+  // by a native speaker.
+  const text = `ເລືອກບ່ອນໃດດີ?\nWhich one ${isNight() ? 'tonight' : 'today'}? Spin the wheel:`;
+  return shareOrCopy({
+    title: 'Paisaidee — spin the wheel',
+    text, url,
+    copied: 'Wheel link copied — paste it to the group',
+  });
 }
 
 /* ---------- Cloudinary URLs: build the delivery URL a slot actually renders at */
@@ -4263,6 +4669,10 @@ function goHome() {
   // reaching this: the map background tap (the post-check-in celebration
   // used to be one too; it opens You now) — see the same call in bindChips().
   closeLightbox();
+  // the wheel is appended to document.body too, for the same reason and with
+  // the same consequence — re-rendering the sheet underneath would leave it
+  // floating over fresh content. Also a guarded no-op when nothing is open.
+  closeWheel();
   if (state.routeVenueId) { openVenue(state.routeVenueId); return; }
   renderHomeSheet();
 }
@@ -4495,8 +4905,14 @@ function heroVariant(h) {
 // All (the whole point of the other sections) and meaningless on Events (no
 // venue-driven pick to make), so renderHomeSheet() only calls this from its
 // f === 'bar' || 'cafe' branch now — All/Events render nothing here at all,
-// not a hidden button. `filter` is always 'bar' or 'cafe' for that reason;
-// quickSurpriseMe() below scopes its pick the same way.
+// not a hidden button. `filter` is always a chip type for that reason;
+// wheelCandidates() scopes its pool the same way.
+//
+// The wheel inherits that placement unchanged — it replaced the button in
+// place rather than moving it. One consequence worth knowing: the ENTRY
+// button is still mobile-only, so a desktop visitor can only reach the wheel
+// through a shared ?wheel= link. The overlay itself is built to work at
+// every width precisely because that is where shared links get opened.
 /* ---------- Home / Discover (the All tab) ----------
    Built to screen 1 of Kar's design mockup: a photo hero carrying the
    brand, a search bar sitting on the hero's bottom edge, a row of round
@@ -4728,12 +5144,18 @@ function typeListEmptyHtml() {
   return `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Nothing here right now — try another filter.</div>`;
 }
 
-function surpriseMeHtml(filter) {
-  // '<type>ໃດກໍໄດ້' is Kar's own pattern from the bar and café buttons.
-  // TODO(lao): the restaurant one ('ຮ້ານອາຫານໃດກໍໄດ້') is that pattern
-  // applied, not something Kar wrote — check it reads naturally.
-  const label = `Surprise me · ${VENUE_TYPE_META[filter].label_lo}ໃດກໍໄດ້`;
-  return `<button class="surprise-btn" data-surprise-me>
+/* The wheel's entry point, in the slot "Surprise me" used to occupy — same
+   button, same class, same place on the page, same icon. Renamed because it
+   now does something visible: "Surprise me" promised a surprise and gave you
+   a venue page, which is the one outcome a surprise is not.
+
+   '<type>ໃດກໍໄດ້' is Kar's own pattern from the bar and café buttons and is
+   kept — "any bar at all" is still exactly what the wheel offers.
+   TODO(lao): the restaurant one ('ຮ້ານອາຫານໃດກໍໄດ້') is that pattern
+   applied, not something Kar wrote — check it reads naturally. */
+function wheelButtonHtml(filter) {
+  const label = `Spin the wheel · ${VENUE_TYPE_META[filter].label_lo}ໃດກໍໄດ້`;
+  return `<button class="surprise-btn" data-wheel>
     ${icoSurprise(20)}<span class="surprise-label">${label}</span>
   </button>`;
 }
@@ -4853,7 +5275,7 @@ function renderHomeSheet() {
     const label = `${VENUE_TYPE_META[f].label} · ${VENUE_TYPE_META[f].label_lo}`;
     let html = `
       ${tabHeaderHtml(f)}
-      ${surpriseMeHtml(f)}
+      ${wheelButtonHtml(f)}
       <div id="chipSentinel"></div>
       <div id="chipSlot"></div>`;
     html += secH(label);
@@ -5019,7 +5441,7 @@ function renderHomeSheet() {
     } else if (happening.length) {
       rendered = true;
       // TODO(lao): ທຸກອາທິດ is "every week" applied, not something Kar
-      // wrote — same flag as surpriseMeHtml()'s restaurant label.
+      // wrote — same flag as wheelButtonHtml()'s restaurant label.
       const repeatsOnly = happening.every(ev => repeatDays(ev).length > 0);
       const heading = repeatsOnly ? 'Every week · ທຸກອາທິດ' : "What's happening · ອີເວັນ";
       const seeAll = '<button type="button" class="sec-see-all" data-see-all="event">See all</button>';
@@ -5235,6 +5657,89 @@ function updateCheckinButton(v) {
   }
 }
 
+/* ---------- sharing ----------
+   Two things get shared out of this app — a venue ("ask a friend") and a
+   wheel ("share this wheel") — and both want the same behaviour: the native
+   share sheet where there is one, the clipboard where there isn't, and a
+   toast either way rather than a silent no-op. That behaviour lives here
+   once, in shareOrCopy(), instead of in each caller.
+
+   No accounts and no backend are involved in any of this: everything a
+   recipient needs is in the URL. */
+
+// the canonical deep link for a venue — the same ?v=<id> boot() reads back
+// (see deepLinkId there) and the same one functions/index.js rewrites the
+// og: tags for, so a link pasted into Messenger shows that venue's card.
+const venueShareUrl = (v) => `${location.origin}/?v=${encodeURIComponent(v.id)}`;
+
+/* The invitation itself. Lao first, English second — CLAUDE.md: "Lao-first,
+   English supports" — and a question, not a label, because the thing being
+   sent is an ask.
+
+   "tonight?" vs "today?" comes from isNight() (>= 17:00), the same test the
+   rest of the app already uses to decide whether it is evening. Sending
+   "tonight?" at 11am is the kind of small wrongness that makes an app feel
+   machine-written.
+
+   TODO(lao): "ຄືນນີ້ໄປ … ບໍ່?" / "ມື້ນີ້ໄປ … ບໍ່?" is the ຄືນນີ້ ("tonight")
+   already in Kar's own tagline — ຄືນນີ້ໄປໃສດີ? — put into a yes/no question
+   with ບໍ່?, plus ມື້ນີ້ for the daytime half. The pattern is standard but
+   neither sentence has been checked by a native speaker. */
+function askAFriendMessage(v) {
+  const name = v.short_name || v.name;
+  const night = isNight();
+  const lao = night ? `ຄືນນີ້ໄປ ${name} ບໍ່?` : `ມື້ນີ້ໄປ ${name} ບໍ່?`;
+  const en = `${name} ${night ? 'tonight' : 'today'}?`;
+  return `${lao}\n${en}`;
+}
+
+/* navigator.share where available, clipboard + toast where not.
+
+   Three failure modes, all of which used to be swallowed by the venue
+   sheet's `catch(e) {}`:
+     AbortError    the user opened the share sheet and backed out. That is a
+                   decision, not a failure — return, and do NOT fall through
+                   to copying, which would put something on their clipboard
+                   they just declined to send.
+     anything else share genuinely did not work (no permitted handler, not a
+                   user gesture any more, http rather than https). Fall
+                   through to the clipboard, which is the whole point of
+                   having a fallback.
+     no clipboard  navigator.clipboard is undefined outside a secure context
+                   and can reject on its own. Say so rather than appearing
+                   to have done nothing.
+
+   The clipboard copy takes the message AND the url, because what is being
+   pasted into a chat is the invitation, not a bare link — the link alone
+   arrives with no question attached to it. */
+async function shareOrCopy({ title, text, url, copied }) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text, url });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      console.warn('[muan] navigator.share failed, falling back to the clipboard', e);
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    showToast(copied);
+  } catch (e) {
+    console.warn('[muan] clipboard write failed', e);
+    showToast("Couldn't copy — select the link in the address bar instead");
+  }
+}
+
+function askAFriend(v) {
+  return shareOrCopy({
+    title: `${v.short_name || v.name} — Paisaidee`,
+    text: askAFriendMessage(v),
+    url: venueShareUrl(v),
+    copied: 'Message copied — paste it to a friend',
+  });
+}
+
 /* ---------- sheet: venue detail ---------- */
 /* Which of the two venue-logo headers to render. Both are built; this picks
    one, so the pair can be compared on a real device rather than in the
@@ -5260,6 +5765,10 @@ function openVenue(id) {
   if (typeof edBlocksLeave === 'function' && edBlocksLeave(() => openVenue(id))) return;
   const v = venueById(id);
   if (!v) return;
+  // the wheel floats over everything (document.body, like the lightbox), so
+  // any route into a venue has to take it down — not just the result card's
+  // own handler. A map pin is tappable with the wheel open on desktop.
+  closeWheel();
   // mobile back-button support (see leaveVenue()/the popstate listener):
   // only a genuinely fresh open — not a re-render of the venue already
   // showing, e.g. the sticky reopen from goHome() — records where "back"
@@ -5337,22 +5846,31 @@ function openVenue(id) {
   // printed raw; no row at all when the venue has none.
   const vibes = (v.vibe || []).map(k => VIBE_TAGS.find(t => t.key === k)).filter(Boolean);
 
-  // one primary action only. Check in is the primary when it's actually
-  // available; updateCheckinButton() moves the flame fill to Directions the
-  // moment it isn't, so a disabled button never wears the primary styling.
-  // A pending venue has no confirmed lat/lng — nothing to check into and
-  // nothing to route to — so neither button renders and Share is all that's
-  // left; it takes the row as a labelled secondary rather than a lone icon.
+  /* one primary action only. Check in is the primary when it's actually
+     available; updateCheckinButton() moves the flame fill to Directions the
+     moment it isn't, so a disabled button never wears the primary styling.
+     A pending venue has no confirmed lat/lng — nothing to check into and
+     nothing to route to — so neither button renders and the share action is
+     all that's left; it takes the row as a labelled secondary rather than a
+     lone icon.
+
+     "Ask a friend" is this button's MAIN MODE, not a fourth control. The row
+     already carries three on a 320px screen (Check in / Directions / the
+     32px share icon) and a fourth would either wrap or shrink the two that
+     decide whether someone actually goes. It is also not really a different
+     action: the old handler already shared `?v=<id>`, and all that has
+     changed is that the payload is now a question somebody can answer
+     instead of a bare URL. See askAFriend(). */
   const actionsHtml = isPending
     ? `<div class="vd-actions">
-        <button class="vd-btn vd-btn-secondary" id="shareBtn">${icoShare(16)}<span>Share</span></button>
+        <button class="vd-btn vd-btn-secondary" id="shareBtn">${icoShare(16)}<span>Ask a friend</span></button>
       </div>`
     : `<div class="vd-actions">
         <button class="vd-btn vd-btn-secondary" id="checkinBtn" data-venue="${v.id}" disabled>
           <span id="checkinLabel">Check in</span>
         </button>
         <button class="vd-btn vd-btn-secondary" id="dirBtn"><span id="dirLbl">Directions</span></button>
-        <button class="vd-btn vd-btn-icon" id="shareBtn" aria-label="Share">${icoShare(16)}</button>
+        <button class="vd-btn vd-btn-icon" id="shareBtn" aria-label="Ask a friend">${icoShare(16)}</button>
       </div>`;
 
   /* "Why you'll like it" (migrations/017_why_rating.sql): Kar's short
@@ -5537,24 +6055,7 @@ function openVenue(id) {
       if (i >= 0 && i < photos.length) openLightbox(photos, i);
     });
   }
-  document.getElementById('shareBtn')?.addEventListener('click', async () => {
-    const url = location.origin + '/?v=' + v.id;
-    const title = (v.short_name || v.name) + ' — Paisaidee';
-    if (navigator.share) {
-      try { await navigator.share({ title, url }); } catch(e) {}
-    } else {
-      await navigator.clipboard.writeText(url);
-      // the button's content is an SVG now, not an emoji glyph, so the
-      // confirmation swaps the whole innerHTML and restores it rather than
-      // rewriting a text node
-      const btn = document.getElementById('shareBtn');
-      if (btn) {
-        const prev = btn.innerHTML;
-        btn.innerHTML = icoCheck(16) + (btn.classList.contains('vd-btn-icon') ? '' : '<span>Copied</span>');
-        setTimeout(() => { btn.innerHTML = prev; }, 1500);
-      }
-    }
-  });
+  document.getElementById('shareBtn')?.addEventListener('click', () => askAFriend(v));
   // description: first sentence up front, the rest revealed in place — no
   // modal, and the link removes itself once there's nothing left to reveal
   const dm = document.getElementById('descMore');
@@ -6359,8 +6860,8 @@ function setSheet(html) {
     }));
   inner.querySelectorAll('[data-mood-relink]').forEach(el =>
     el.addEventListener('click', () => showMoodIntro({ startAtMood: true })));
-  inner.querySelectorAll('[data-surprise-me]').forEach(el =>
-    el.addEventListener('click', () => quickSurpriseMe(state.filter)));
+  inner.querySelectorAll('[data-wheel]').forEach(el =>
+    el.addEventListener('click', () => openWheel({ filter: state.filter })));
   inner.querySelectorAll('[data-home]').forEach(el =>
     el.addEventListener('click', () => {
       // the venue detail's back arrow / close button. On mobile it returns to

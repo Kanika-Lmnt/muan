@@ -119,16 +119,76 @@ function ogBlockFor(v, origin) {
   <!-- og:end -->`;
 }
 
+/* ?wheel=<id,id,…>&seed=<n> — a shared wheel (see shareWheel()/openWheel()
+   in js/app.js). What arrives in a group chat is a decision to make
+   together, so the preview asks the question rather than naming a place: a
+   wheel link that previewed as one venue would give away an answer the
+   wheel has not been spun for yet.
+
+   The default 1200x630 card is the image, deliberately. The alternative —
+   the first venue's photo — would be the same giveaway, and there is no
+   per-wheel image to generate without a build step (CLAUDE.md).
+
+   TODO(lao): "ເລືອກບ່ອນໃດດີ?" is the phrasing given in the task, the same
+   string js/app.js uses for the overlay's own title and for the shared
+   message body, so the link, the preview and the page all say one thing.
+   Not yet checked by a native speaker. */
+function wheelOgBlock(ids, origin, search) {
+  const known = ids.filter((id) => byId.has(id));
+  const n = known.length;
+  const title = 'Which one tonight? ເລືອກບ່ອນໃດດີ?';
+  // only ever states a number it can actually stand behind: ids this deploy
+  // does not know are dropped here exactly as openWheel() drops them, so the
+  // preview and the wheel agree on the count.
+  const desc = n >= 2
+    ? `${n} places on the wheel. Spin to decide — everyone who opens this link gets the same answer.`
+    : 'Spin the wheel to decide where to go in Vientiane tonight.';
+  const image = `${origin}/assets/og-default.png`;
+  return `<!-- og:start -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Paisaidee">
+  <meta property="og:title" content="${attr(title)}">
+  <meta property="og:description" content="${attr(desc)}">
+  <meta property="og:url" content="${attr(origin + '/' + search)}">
+  <meta property="og:image" content="${attr(image)}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Paisaidee — ໄປໃສດີ">
+  <meta property="og:locale" content="lo_LA">
+  <meta property="og:locale:alternate" content="en_GB">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${attr(title)}">
+  <meta name="twitter:description" content="${attr(desc)}">
+  <meta name="twitter:image" content="${attr(image)}">
+  <!-- og:end -->`;
+}
+
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);
     const id = url.searchParams.get('v');
+    const wheel = url.searchParams.get('wheel');
     // the overwhelmingly common case: a plain visit. Nothing is read, nothing
     // is parsed, the asset is streamed straight through.
-    if (!id) return context.next();
+    if (!id && !wheel) return context.next();
 
-    const v = byId.get(id);
-    if (!v) return context.next();
+    /* which block to build. ?v= wins when a URL somehow carries both, which
+       is the same precedence boot() applies in js/app.js — the preview must
+       not advertise something other than what the page will show.
+       A ?wheel= whose ids are ALL unknown to this deploy gets no rewrite:
+       there is no wheel to preview, so the generic site card is the honest
+       answer. The ids are capped at the same 8 the wheel itself draws. */
+    let block = null;
+    if (id) {
+      const v = byId.get(id);
+      if (v) block = (origin) => ogBlockFor(v, origin);
+    } else {
+      const ids = wheel.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 8);
+      if (ids.some((x) => byId.has(x))) {
+        block = (origin) => wheelOgBlock(ids, origin, url.search);
+      }
+    }
+    if (!block) return context.next();
 
     const res = await context.next();
     // only rewrite an HTML 200 — if Pages served anything else for "/" it is
@@ -141,7 +201,7 @@ export async function onRequestGet(context) {
     // read rather than guessing where the tags are
     if (!OG_BLOCK.test(html)) return new Response(html, res);
 
-    const rewritten = html.replace(OG_BLOCK, () => ogBlockFor(v, url.origin));
+    const rewritten = html.replace(OG_BLOCK, () => block(url.origin));
     const out = new Response(rewritten, res);
     // the body is no longer the bytes those headers describe: Content-Length
     // is wrong and the asset server's ETag now identifies different content.

@@ -206,6 +206,60 @@ of 2026-09-14.
 5. **Slice E — quests.** Monthly definitions + progress on the check-in path.
    — *not built, still gated on Gate 2 usage data.*
 
+### Challenges (idea, not built)
+
+An idea parked against slice E, written down so it is not re-invented from
+scratch. Nothing below exists, nothing below is agreed, and no schema or
+endpoint here has been designed.
+
+**The idea.** Phase 1 shipped a wheel (`openWheel()` in `js/app.js`): a group
+spins one shared `/?wheel=<ids>&seed=<n>` link and everyone who opens it is
+handed the same venue. That is already a small group commitment — *we said
+we'd go here* — with nothing on the other side of it. A challenge would close
+that loop: **spin the wheel together, then actually check in at the venue the
+wheel picked, and the check-in is worth a bonus.** It rewards the one thing
+the app most wants and currently cannot see — a group deciding, and then
+going.
+
+**Why it is not in slice E as written.** Slice E's quests are solo and
+monthly ("two new places"), measured entirely from one user's own check-in
+rows. A wheel challenge is neither: it is per-outing, and its whole value is
+that more than one person turns up. That makes it a different mechanic
+sharing a table, not another row in `quests`.
+
+**Gated on friends (slice D), hard.** Without an accepted-friend graph there
+is no way to tell a group outing from one person opening their own link on
+two devices, and the bonus becomes a thing you grind alone. Slice D is itself
+still gated on Gate 2 usage data, so this sits behind two gates, not one.
+Build order is not negotiable here: friends first, or not at all.
+
+**Anti-farming, which is most of the work.** A bonus attached to a URL that
+anybody can mint is a bonus that will be minted. At minimum, before any of
+this is worth designing properly:
+
+- The wheel link is currently *stateless by design* — the ids and the seed
+  are the whole thing, nothing is written anywhere. A rewardable wheel cannot
+  stay stateless: the server has to have seen the spin before it happened, or
+  "I spun and got the bar I was already standing in" is unfalsifiable.
+- The server decides the winner, not the client. `wheelWinner()` is
+  deterministic in `(seed, pool)` precisely so friends agree — which also
+  means a sender can search seeds until the wheel picks whatever they want.
+- The bonus is per *outing*, not per person per venue, and it has to survive
+  the obvious abuses: the same group re-spinning at the same venue all night,
+  one account riding several groups' wheels, a wheel spun from a sofa and
+  redeemed a week later.
+- It inherits every rule check-in already has — server-side GPS validation
+  (§3), the radius from `config`, the existing rate limits — and adds a
+  window: a wheel result that is hours old is not a plan any more.
+- Embers for this come out of the same `config` table as everything else, so
+  the number is tunable without a redeploy and can be set to zero if it turns
+  out to be farmable after all.
+
+**Open questions, none answered:** does everyone who opened the link get the
+bonus or only those who check in; what happens when the group splits and half
+of them go somewhere else; does a declined wheel cost anything (it should
+not — punishing a group for changing its mind is the opposite of the point).
+
 Rule: do not start a slice until the previous one is deployed and used.
 The exception already taken is recorded in the header: gamification went
 ahead of the gate because friends asked for it during validation. That was a

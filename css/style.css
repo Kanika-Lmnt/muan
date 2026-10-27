@@ -3433,6 +3433,21 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
   color: var(--flame-text);
 }
 
+/* a shared wheel's winner that has closed for this viewer (see
+   wheelClosedResultHtml() in app.js). Muted on purpose — no photo, no
+   shadow, no flame: it reports a result, it does not invite anyone to go. */
+.wheel-closed {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-radius: 14px;
+  background: var(--ink3); color: var(--bone); font-size: 14px; line-height: 1.4;
+}
+.wheel-closed-line { flex: 1; min-width: 0; }
+.wheel-closed-hours {
+  flex-shrink: 0; border: none; background: none; padding: 0; cursor: pointer;
+  font-family: var(--font); font-size: 12.5px; font-weight: 700; color: var(--secondary);
+}
+.wheel-slice-closed { opacity: .4; }
+
 .wheel-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .wheel-btn {
   height: 48px; border: none; border-radius: 14px; cursor: pointer;
@@ -4235,9 +4250,11 @@ textarea:focus-visible,
 .chip::after   { inset: -1px 0; }
 /* 40x40, alone in its corner of the hero */
 .vd-round::after { inset: -2px; }
-/* 40px wide, 44px tall already, in a row with gap: 8px — 2px each side
-   leaves 4px of clear space between neighbours */
-.vd-btn-icon::after { inset: 0 -2px; }
+/* 40px wide, 44px tall already, in a row with gap: 8px. All 4px of slop
+   goes on the LEFT: the icon is the row's last item, and the old 2px each
+   side pushed its right-hand 2px past .vd-actions (scrollWidth 354 in a
+   352px row). 4px into the 8px gap still leaves 4px of clear space. */
+.vd-btn-icon::after { inset: 0 0 0 -4px; }
 /* 15-17px tall. What sits within 15px above and below both of these is the
    description / hours text they belong to, which is not interactive, so the
    slop can only ever land on their own paragraph. */

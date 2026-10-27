@@ -2994,19 +2994,18 @@ function wheelCandidates(filter) {
    stable only while the slice list is. Drop one closed venue out of the
    middle and every index after it shifts, so a friend opening the link ten
    minutes later gets a different answer for a reason that has nothing to do
-   with the venue they got. Shuffling the POOL instead and taking the first
-   entry that is still open means a closure only ever skips past one name:
-   everyone opening the link after it still agrees with each other, and they
-   agree with everyone before it unless the closure was the winner itself.
+   with the venue they got. Shuffling the POOL instead and taking its first
+   entry makes the answer a function of (seed, pool) and nothing else.
 
-   The honest limit, which no amount of cleverness removes: this is a
-   function of what is open at the moment of opening. If a venue closes
-   between two friends opening the same link, they can land on different
-   answers. Pinning the answer instead would mean sending the second friend
-   to a venue that has shut, which is worse. */
-function wheelWinner(pool, slices, seed) {
-  const open = new Set(slices.map(v => v.id));
-  return seededShuffle(pool, mulberry32(seed)).find(v => open.has(v.id)) || null;
+   Deliberately NOT "the first entry that is still open". That version
+   re-drew whenever the winner had closed, so a friend opening the link at
+   midnight was quietly handed a different venue from everyone else — the
+   one thing a group wheel must not do. The winner is fixed; if it has shut
+   by the time someone opens the link, openWheel() keeps it on the dial and
+   the result says so (wheelClosedResultHtml()) instead of re-rolling.
+   A local spin is unaffected: its pool is built from open venues only. */
+function wheelWinner(pool, seed) {
+  return seededShuffle(pool, mulberry32(seed))[0] || null;
 }
 
 /* The dial, as SVG rather than a CSS conic-gradient: conic-gradient paints
@@ -3056,7 +3055,7 @@ function wheelDialHtml(slices) {
     const name = v.short_name || v.name;
     const label = name.length > 15 ? name.slice(0, 14) + '…' : name;
     const size = slices.length > 6 ? 8.5 : 10;
-    return `<g>
+    return `<g data-slice="${esc(v.id)}">
       <path d="M${CX} ${CY} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} Z"
             fill="${fill}" stroke="var(--ground)" stroke-width="1.5"/>
       <text x="${lx}" y="${ly}" fill="${ink}" font-size="${size}" font-weight="700"
@@ -3086,6 +3085,34 @@ function wheelResultCardHtml(v) {
       </span>
       <span class="wheel-card-go">Open ›</span>
     </button>`;
+}
+
+/* The result when a SHARED wheel's winner has closed for this viewer (see
+   wheelWinner(): the winner is never re-drawn). Not a .wheel-card button —
+   a big tappable "go here" card is exactly the invitation this must not
+   make. The whole thing is a status line; the only control is a quiet
+   "Hours" link, because the obvious next question is "when, then?".
+
+   "opens <time>" comes from openStatus() when it opens later today, else
+   from tomorrow's hours. Both are the venue's own hours, never a guess; a
+   venue with no confirmed hours says that instead of claiming "closed". */
+function wheelClosedResultHtml(v) {
+  const name = v.short_name || v.name;
+  const st = openStatus(v);
+  let line;
+  if (!v.hours) {
+    line = `${name} won — its hours aren't confirmed, so check before you go`;
+  } else if (st.label.startsWith('opens ')) {
+    line = `${name} won — it's closed now, ${st.label}`;
+  } else {
+    const t = parseHours(v.hours[DAYS[(new Date().getDay() + 1) % 7]]);
+    line = `${name} won — it's closed now${t ? `, opens ${fmtTime(t.open)} tomorrow` : ''}`;
+  }
+  return `
+    <div class="wheel-closed" role="status">
+      <span class="wheel-closed-line">${esc(line)}</span>
+      <button type="button" class="wheel-closed-hours" data-wheel-open="${esc(v.id)}">Hours ›</button>
+    </div>`;
 }
 
 let wheelPop = null;
@@ -3124,7 +3151,17 @@ function openWheel(opts = {}) {
         .slice(0, WHEEL_MAX_SLICES)
     : wheelCandidates(filter);
 
-  const slices = pool.filter(v => openStatus(v).open);
+  // a fresh seed per local spin; the shared one comes off the URL so every
+  // phone that opens the link runs the identical draw
+  const seed = Number.isFinite(opts.seed) ? opts.seed : (Math.random() * 1e9) | 0;
+  const winner = wheelWinner(pool, seed);
+  const winnerClosed = !!winner && !openStatus(winner).open;
+
+  // SLICES: what is open, plus the winner even if it has closed — the dial
+  // has to be able to land on it, and dropping it would be a silent re-draw.
+  // Every other closed venue is left off and counted in the note.
+  const slices = pool.filter(v => v === winner || openStatus(v).open);
+  const openCount = slices.length - (winnerClosed ? 1 : 0);
   const closedCount = pool.length - slices.length;
 
   if (!shared && slices.length < 2) {
@@ -3135,10 +3172,6 @@ function openWheel(opts = {}) {
     return;
   }
 
-  // a fresh seed per local spin; the shared one comes off the URL so every
-  // phone that opens the link runs the identical draw
-  const seed = Number.isFinite(opts.seed) ? opts.seed : (Math.random() * 1e9) | 0;
-  const winner = wheelWinner(pool, slices, seed);
   const spinnable = slices.length >= 2 && !!winner;
 
   closeWheel();
@@ -3155,9 +3188,12 @@ function openWheel(opts = {}) {
     : '';
 
   const emptyNote = spinnable ? '' :
-    `<div class="wheel-note wheel-note-empty">${slices.length === 1
+    `<div class="wheel-note wheel-note-empty">${openCount === 1
       ? 'Only one place on this wheel is open right now, so there is nothing to spin.'
       : 'Nothing on this wheel is open right now.'}</div>`;
+  // nothing to spin AND the fixed winner is shut: still say who won, rather
+  // than leaving the friend to wonder what everyone else is looking at
+  const staticResult = !spinnable && winnerClosed ? wheelClosedResultHtml(winner) : '';
 
   const ov = document.createElement('div');
   ov.className = 'wheel-pop';
@@ -3181,6 +3217,7 @@ function openWheel(opts = {}) {
         </div>` : ''}
         ${closedNote}
         ${emptyNote}
+        ${staticResult}
         ${spinnable ? `
         <div class="wheel-result" aria-live="polite"></div>
         <div class="wheel-actions">
@@ -3197,9 +3234,17 @@ function openWheel(opts = {}) {
   // let this append+show sequence get stuck mid-transition
   requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
 
-  wheelPop = { ov, pool, slices, seed, winner, shared, spun: false };
+  wheelPop = { ov, pool, slices, seed, winner, winnerClosed, shared, spun: false };
 
   ov.addEventListener('click', (e) => { if (e.target === ov) closeWheel(); });
+  // delegated: the result (card or closed line) is injected later by
+  // spinWheel(), and the no-spin closed line is already here
+  ov.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-wheel-open]');
+    if (!b) return;
+    closeWheel();
+    openVenue(b.dataset.wheelOpen);
+  });
   ov.querySelector('.wheel-close').addEventListener('click', closeWheel);
   document.addEventListener('keydown', wheelKeydown);
   ov.querySelector('[data-wheel-browse]')?.addEventListener('click', () => {
@@ -3228,7 +3273,7 @@ function openWheel(opts = {}) {
    there is no rule left behind to fight. */
 function spinWheel() {
   if (!wheelPop || wheelPop.spun || !wheelPop.winner) return;
-  const { ov, slices, seed, winner, shared } = wheelPop;
+  const { ov, slices, seed, winner, winnerClosed, shared } = wheelPop;
   wheelPop.spun = true;
 
   const idx = slices.findIndex(v => v.id === winner.id);
@@ -3250,15 +3295,14 @@ function spinWheel() {
 
   const land = () => {
     if (!wheelPop || wheelPop.ov !== ov) return;   // closed mid-spin
+    // a winner that has shut is not something to be delighted about: Phai
+    // stays as it was, the winning slice dims, and the result is a status
+    // line rather than a card to tap through to
     const phai = ov.querySelector('.wheel-phai img');
-    if (phai) phai.src = 'assets/mascot/phai-delighted.svg';
+    if (phai && !winnerClosed) phai.src = 'assets/mascot/phai-delighted.svg';
+    if (winnerClosed) ov.querySelector(`[data-slice="${CSS.escape(winner.id)}"]`)?.classList.add('wheel-slice-closed');
     const res = ov.querySelector('.wheel-result');
-    if (res) res.innerHTML = wheelResultCardHtml(winner);
-    res?.querySelector('[data-wheel-open]')?.addEventListener('click', (e) => {
-      const id = e.currentTarget.dataset.wheelOpen;
-      closeWheel();
-      openVenue(id);
-    });
+    if (res) res.innerHTML = winnerClosed ? wheelClosedResultHtml(winner) : wheelResultCardHtml(winner);
     if (btn) {
       btn.disabled = false;
       // a shared wheel has exactly one answer — that is the feature, so there

@@ -5230,6 +5230,19 @@ function icoHeart(size, filled) {
     fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
     <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>`;
 }
+/* "info updated 3 Oct" under the hours. The selling point is accurate
+   hours, and nothing on the page said how fresh they were. This is the
+   venue row's own updated_at (any edit by Kar or the owner), so it says
+   exactly that — when the listing was last changed — and never "checked"
+   or "confirmed", which it can't know. Absent when the field is missing
+   (an older data/venues.json mirror). */
+function updatedLineHtml(v) {
+  if (!v.updated || !/^\d{4}-\d{2}-\d{2}/.test(v.updated)) return '';
+  const d = new Date(v.updated.slice(0, 10) + 'T00:00');
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const label = d.toLocaleDateString('en-GB', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  return `<div class="vd-updated">info updated ${esc(label)}</div>`;
+}
 function saveBtnHtml(v) {
   const on = isSaved(v.id);
   return `<button class="vd-round vd-save${on ? ' on' : ''}" data-save="${esc(v.id)}"
@@ -6142,7 +6155,8 @@ function openVenue(id) {
     <span class="vd-status">${esc(st.label)}</span>
     <span class="vd-dot">·</span>
     <button type="button" class="vd-more" id="hoursToggle">all hours</button>
-    <div class="hours-week" id="hoursWeek">${week}</div>`));
+    <div class="hours-week" id="hoursWeek">${week}</div>
+    ${updatedLineHtml(v)}`));
   /* open-air. The card note (outdoorNoteHtml()) only speaks when rain is
      actually a factor, which is right for a scan surface — but the sheet is
      where someone decides to go, and "this place has no roof" is worth

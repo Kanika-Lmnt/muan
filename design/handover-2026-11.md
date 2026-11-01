@@ -113,3 +113,19 @@ neutral so photos and the one accent carry the colour; avoid busy texture.
 - The search bar no longer carries its own extra drop shadow (both themes).
 - Splash, theme-color and the PWA manifest use the new base colour.
 - Photo scrims use the new ink value.
+
+## 7. Third pass
+
+- **Saved places**: a heart on every venue page (top right of the photo);
+  saved places appear as the first row on Home ("Saved · ບັນທຶກໄວ້",
+  TODO(lao)). Stored on the device only — no account sync yet.
+- **"info updated 3 Oct"** under the hours on every venue page, from the
+  venue row's updated_at (when the listing last changed — deliberately not
+  worded as "checked"). /api/venues and scripts/export-venues.js now carry
+  it as `updated`; it appears once the live API answers, or after the next
+  export for the bundled mirror. Note the Cache API can serve the old
+  /api/venues payload for up to an hour after deploy.
+- Fixed: the share button was a white square in dark mode (no surface of its
+  own — the browser's default button face). Same root cause would have hit
+  other buttons once the gradient fill was removed, so --card-fill is a flat
+  image rather than `none`.

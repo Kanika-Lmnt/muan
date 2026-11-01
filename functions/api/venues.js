@@ -48,7 +48,7 @@ async function handleGet(context) {
       `SELECT id, name, short_name, name_lo, type, lat, lng, area, short,
               description, photos, hours, hours_note, contact, parking, links,
               verified, status, source, signature, pin_status, vibe, outdoor,
-              why, rating, review_count, logo
+              why, rating, review_count, logo, updated_at
        FROM venues WHERE pin_status = 'placed' ORDER BY rowid`
     ).all();
 
@@ -118,6 +118,8 @@ async function handleGet(context) {
       // you which place it is and a photo tells you what it looks like, and a
       // card is there to answer the second question.
       if (r.logo !== null) v.logo = r.logo;
+      // date only: when the listing was last changed (venue page shows it)
+      if (r.updated_at) v.updated = String(r.updated_at).slice(0, 10);
       return v;
     });
 

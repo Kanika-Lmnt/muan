@@ -181,7 +181,10 @@
      tone (--ink3 on --ink2) plus a hairline, which is how dark UIs show
      elevation; card-lift stays a valid (empty) shadow so every
      `var(--card-edge), var(--card-lift)` list still parses. */
-  --card-fill: none;
+  /* a FLAT image, not `none`: several consumers are <button>s that set
+     only background-image from this token, and with `none` they fell back
+     to the browser's default light-grey button face */
+  --card-fill: linear-gradient(var(--ink3), var(--ink3));
   --card-edge: inset 0 0 0 1px rgba(255,255,255,.05);
   --card-lift: 0 0 0 0 transparent;
   /* layered card (.card-big — the On fire carousel cards and the full-width
@@ -2933,6 +2936,7 @@ body {
   min-height: 52px; font-size: 15px; border-radius: 16px;
 }
 .vd-btn-secondary {
+  background-color: var(--ink3);
   background-image: var(--card-fill); box-shadow: var(--card-edge), var(--card-lift);
   color: var(--bone);
   /* .vd-btn sets border: none; this re-adds one, and being the later rule
@@ -2964,7 +2968,13 @@ body {
      44px min-height and the flex widths where they are. */
   border: 1px solid var(--dim);
 }
-.vd-btn-icon { flex: 0 0 40px; padding: 0; color: var(--mute); }
+/* share / Ask a friend. It had no surface of its own and showed the
+   browser's default button face — a white square on the dark theme */
+.vd-btn-icon {
+  flex: 0 0 40px; padding: 0; color: var(--bone);
+  background-color: var(--ink3); background-image: var(--card-fill);
+  box-shadow: var(--card-edge), var(--card-lift);
+}
 .vd-btn:disabled { cursor: default; opacity: .6; }
 /* loadingRing() goes inside #dirLbl during a route fetch (see toggleRoute())
    — no colour of its own here, so it inherits whichever of the two button
@@ -4346,3 +4356,6 @@ textarea:focus-visible,
 .vd-save.pop svg { animation: save-pop .35s cubic-bezier(.3,1.8,.5,1); }
 @keyframes save-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.2); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .vd-save.pop svg { animation: none; } }
+
+/* "info updated 3 Oct" under the hours row (updatedLineHtml()) */
+.vd-updated { margin-top: 6px; font-size: 12px; color: var(--secondary); }

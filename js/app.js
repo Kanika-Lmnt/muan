@@ -1041,8 +1041,18 @@ function dismissSplash() {
 const DARK_STYLE_URL  = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 const LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
+/* the stored choice: 'light' | 'dark' | 'auto'. Cream (light) is the
+   default for anyone who has never touched the toggle (Kar, Nov 2026);
+   'auto' — dark from 5 pm to 6 am — is still one tap away. */
+function themePref() {
+  try {
+    const p = localStorage.getItem('muan-theme');
+    return (p === 'light' || p === 'dark' || p === 'auto') ? p : 'light';
+  } catch (e) { return 'light'; }
+}
+
 function resolvedTheme() {
-  const pref = localStorage.getItem('muan-theme') || 'auto';
+  const pref = themePref();
   if (pref !== 'auto') return pref;
   const h = new Date().getHours();
   return (h >= 17 || h < 6) ? 'dark' : 'light';
@@ -1063,8 +1073,9 @@ function applyTheme() {
   const theme = resolvedTheme();
   document.documentElement.dataset.theme = theme;
   document.getElementById('themeLabel').textContent =
-    (localStorage.getItem('muan-theme') || 'auto') === 'auto' ? 'auto' : theme;
+    themePref() === 'auto' ? 'auto' : theme;
   updateThemeIcon(theme);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   if (state.map && state.theme !== theme) state.map.setStyle(mapStyle(theme));
   state.theme = theme;
 }
@@ -1081,8 +1092,11 @@ function initTheme() {
   const theme = (preset === 'light' || preset === 'dark') ? preset : resolvedTheme();
   document.documentElement.dataset.theme = theme;
   document.getElementById('themeLabel').textContent =
-    (localStorage.getItem('muan-theme') || 'auto') === 'auto' ? 'auto' : theme;
+    themePref() === 'auto' ? 'auto' : theme;
   updateThemeIcon(theme);
+  // the pre-paint script runs before the theme-color <meta> exists, so the
+  // browser bar colour is set here
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   state.theme = theme;
 }
 
@@ -1909,9 +1923,10 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
 
 function bindTheme() {
   document.getElementById('themeBtn').addEventListener('click', () => {
-    const order = ['auto', 'light', 'dark'];
-    const cur = localStorage.getItem('muan-theme') || 'auto';
-    localStorage.setItem('muan-theme', order[(order.indexOf(cur) + 1) % 3]);
+    // light (the default) → dark → auto (follows the clock) → light
+    const order = ['light', 'dark', 'auto'];
+    const cur = themePref();
+    try { localStorage.setItem('muan-theme', order[(order.indexOf(cur) + 1) % 3]); } catch (e) {}
     applyTheme();
   });
   setInterval(applyTheme, 60000);

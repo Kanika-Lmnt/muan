@@ -129,3 +129,11 @@ neutral so photos and the one accent carry the colour; avoid busy texture.
   own — the browser's default button face). Same root cause would have hit
   other buttons once the gradient fill was removed, so --card-fill is a flat
   image rather than `none`.
+
+## 8. Cream is the default theme
+
+Kar prefers the cream (light) theme, so it is now what everyone gets until
+they choose otherwise — it no longer flips to dark at 5 pm or follows the
+phone's dark-mode setting. The theme button cycles light → dark → auto,
+where auto is the old behaviour (dark 5 pm–6 am). A saved choice is kept.
+The browser bar colour (theme-color) and the PWA manifest follow cream.

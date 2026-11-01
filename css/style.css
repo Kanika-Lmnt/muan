@@ -4340,3 +4340,9 @@ textarea:focus-visible,
   display: inline-flex; align-items: center;
   min-height: 44px;
 }
+
+/* ---------- Saved: the heart on the venue page (saveBtnHtml()) ---------- */
+.vd-save.on { color: var(--flame); }
+.vd-save.pop svg { animation: save-pop .35s cubic-bezier(.3,1.8,.5,1); }
+@keyframes save-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.2); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .vd-save.pop svg { animation: none; } }

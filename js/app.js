@@ -5200,6 +5200,42 @@ function homeCategoriesHtml() {
   }).join('')}${tile('data-wheel aria-label="Spin the wheel"', CAT_ICONS.wheel, 'ສຸ່ມເລືອກ', 'Spin')}</div>`;
 }
 
+/* ---------- Saved places ----------
+   The heart on a venue page. Kept on this device (localStorage) so it works
+   before anyone signs in — no account, no server, no migration. Newest
+   first, capped at 50. Syncing to an account is a later step (it would
+   need a saved_venues table); until then a saved list belongs to the phone
+   it was made on, and the copy says nothing that promises otherwise. */
+const SAVED_KEY = 'psd-saved';
+function savedIds() {
+  try {
+    const a = JSON.parse(localStorage.getItem(SAVED_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+  } catch (e) { return []; }
+}
+function isSaved(id) { return savedIds().includes(id); }
+function toggleSaved(id) {
+  const now = savedIds();
+  const on = !now.includes(id);
+  const next = on ? [id, ...now] : now.filter(x => x !== id);
+  try { localStorage.setItem(SAVED_KEY, JSON.stringify(next.slice(0, 50))); } catch (e) {}
+  return on;
+}
+// saved venues that still exist and are listable, in saved order
+function savedVenues() {
+  return savedIds().map(venueById).filter(v => v && v.pin_status !== 'pending');
+}
+function icoHeart(size, filled) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"
+    fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+    <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/></svg>`;
+}
+function saveBtnHtml(v) {
+  const on = isSaved(v.id);
+  return `<button class="vd-round vd-save${on ? ' on' : ''}" data-save="${esc(v.id)}"
+    aria-pressed="${on}" aria-label="${on ? 'Remove from saved' : 'Save this place'}">${icoHeart(18, on)}</button>`;
+}
+
 // On fire's carousel card, to the mockup's shape: photo on top, then name and
 // one "Type · distance" line (the area when there is no fix). The line where
 // the mockup prints stars is ratingLineHtml(), which prints nothing until
@@ -5579,6 +5615,18 @@ function renderHomeSheet() {
       (state.eventsFailed
         ? `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Couldn't load what's on — check your connection and reload. The venues below still work.</div>`
         : `<div class="sec-empty"><div class="sec-empty-ico" data-empty-svg></div>Nothing verified yet — new list every Thursday.</div>`);
+  }
+
+  // Saved — the person's own hearts, first on All because they are the
+  // places they already said they want. Not shown when empty: no
+  // "save something!" nag box. TODO(lao): 'ບັນທຶກໄວ້'.
+  const saved = f === 'all' && !state.homeQuery ? savedVenues() : [];
+  if (showVenueSections && saved.length) {
+    rendered = true;
+    const railed = mobile && ON_FIRE_CAROUSEL;
+    const cards = saved.map(v => railed ? railCardHtml(v) : rowCard(v)).join('');
+    html += secH('Saved · ບັນທຶກໄວ້', `${saved.length} ${saved.length === 1 ? 'place' : 'places'}`) +
+      (railed ? `<div class="fire-rail">${cards}</div>` : cards);
   }
 
   const pickVenuesQ = sortEditorial(pickVenues);
@@ -6005,6 +6053,7 @@ function openVenue(id) {
       </div>
       <div class="vd-hero-tr">
         ${isNo1(v) ? '<span class="vd-tonight">TONIGHT</span>' : ''}
+        ${saveBtnHtml(v)}
         <button class="vd-round" data-home aria-label="Close">✕</button>
       </div>
     </div>`;
@@ -7046,6 +7095,17 @@ function setSheet(html) {
     el.addEventListener('click', () => showMoodIntro({ startAtMood: true })));
   inner.querySelectorAll('[data-wheel]').forEach(el =>
     el.addEventListener('click', () => openWheel({ filter: state.filter })));
+  inner.querySelectorAll('[data-save]').forEach(el =>
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const on = toggleSaved(el.dataset.save);
+      el.classList.toggle('on', on);
+      el.setAttribute('aria-pressed', String(on));
+      el.setAttribute('aria-label', on ? 'Remove from saved' : 'Save this place');
+      el.innerHTML = icoHeart(18, on);
+      if (on) restartAnim(el, 'pop');
+      showToast(on ? 'Saved — it’s at the top of Home' : 'Removed from saved');
+    }));
   inner.querySelectorAll('[data-home]').forEach(el =>
     el.addEventListener('click', () => {
       // the venue detail's back arrow / close button. On mobile it returns to

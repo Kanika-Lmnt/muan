@@ -1,9 +1,16 @@
 /* ============ Muan design tokens — night (default) ============ */
 :root {
-  --ink:   #131019;
-  --ink2:  #1C1726;
-  --ink3:  #241E31;
-  --ink4:  #2E2740;
+  /* Night neutrals, Nov 2026: the old scale (#131019 → #2E2740) carried a
+     strong blue-violet cast that fought the warm venue photos and the
+     coral. These keep the faintest plum warmth so the night still feels
+     like Paisaidee, but read as near-neutral charcoal: the photos and the
+     one accent carry the colour, the chrome doesn't. Same four steps, each
+     one a visibly lighter surface — in the dark theme, depth comes from
+     lighter surfaces, not shadows (shadows barely read on near-black). */
+  --ink:   #141215;
+  --ink2:  #1B181C;
+  --ink3:  #242126;
+  --ink4:  #2F2B31;
   --flame: #FF5A3C;
   /* the label colour for anything sitting ON a flame fill (the active chip,
      the primary buttons, the "tonight" tag). Deliberately NOT --ink: --ink
@@ -15,7 +22,7 @@
      .vd-tonight, .vd-btn-primary) already hardcoded this exact value and
      were the only ones that were right; they now read the token too, so
      the nine flame-filled controls can no longer disagree about it. */
-  --on-flame: #131019;
+  --on-flame: #141215;
   /* flame used as TEXT on the page ground rather than as a fill — errors,
      counts, the active nav label, "More" links. Night's flame reads 5.65:1
      on its own ground so it needs no separate value; day's #E8462A reads
@@ -55,8 +62,8 @@
      4.51 on ground / ink3 / ink4. Hue and saturation are untouched: this
      is the same grey-violet with the lightness raised, not a new colour.
      Day's --mute is unrelated and unchanged (5.93:1 on its own ground). */
-  --mute:  #948F9D;
-  --dim:   #5A5468;
+  --mute:  #A39D9F;
+  --dim:   #6E6870;
   /* secondary text on Home (Sleek item 3 — the greeting sub-line, the
      eyebrow, section-header English, card sub-lines, inactive bottom-nav
      labels). Item 3 took all of them from --mute to --dim, which is a day
@@ -146,8 +153,10 @@
      Night runs at a lower alpha on a lighter ink: .035 of a warm grey is
      invisible on #1C1726, and raising the alpha to compensate turns the
      weave into visible banding rather than texture. */
-  --weave: repeating-linear-gradient(45deg,
-    rgba(245,241,232,.02) 0 2px, transparent 2px 7px);
+  /* off in both themes (Nov 2026): the 45° thread read as stripes rather
+     than texture, especially on night. Kept as a token so a real Lao
+     textile motif can drop straight back into every consumer. */
+  --weave: none;
   /* the mobile card surface — see .card inside the max-width:767px block,
      its only consumer. Night keeps the --ink3 step up from the sheet
      behind it. Day overrides this (and --card-shadow below) in the light
@@ -166,9 +175,15 @@
      exactly "one step either side" of --ink3 in this app's 4-step ink
      scale, which is what a subtle top-lit edge needs — inventing separate
      hex here would just duplicate that scale slightly out of sync with it. */
-  --card-fill: linear-gradient(180deg, var(--ink4) 0%, var(--ink2) 100%);
-  --card-edge: inset 0 1px 0 rgba(255,255,255,.09);
-  --card-lift: 0 2px 10px rgba(0,0,0,.35);
+  /* Flat surfaces (Nov 2026). The gradient fill, bright top edge and drop
+     shadow made every card, tile and the search bar look embossed — "the
+     UI feels protruding". Night now separates a surface from its ground by
+     tone (--ink3 on --ink2) plus a hairline, which is how dark UIs show
+     elevation; card-lift stays a valid (empty) shadow so every
+     `var(--card-edge), var(--card-lift)` list still parses. */
+  --card-fill: none;
+  --card-edge: inset 0 0 0 1px rgba(255,255,255,.05);
+  --card-lift: 0 0 0 0 transparent;
   /* layered card (.card-big — the On fire carousel cards and the full-width
      hero cards): the text plate that lifts over the photo's lower edge, and
      the card's own outer shadow, strengthened so the whole card reads as
@@ -182,12 +197,12 @@
      card surface itself, which separates from any photo on its own, and
      there the shadow is what makes it read as lifted rather than inlaid. */
   --plate: var(--ink4);
-  --plate-shadow: 0 2px 10px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.10);
-  --card-shadow-big: var(--card-edge), 0 6px 20px rgba(0,0,0,.45);
+  --plate-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  --card-shadow-big: var(--card-edge);
   /* frosted-glass surfaces (bottom nav, route bar) — matches this theme's
      own --ink so the blur reads as "this surface, translucent" rather than
      an unrelated tint. See the "frosted glass" section below. */
-  --frost: rgba(19,16,25,.72);
+  --frost: rgba(20,18,21,.78);
 }
 
 /* day theme — warm milky/cream */
@@ -290,8 +305,7 @@
   --ground: var(--ink);
   /* see --weave in :root. This is the value the texture was drawn for — a
      warm grey thread on cream. */
-  --weave: repeating-linear-gradient(45deg,
-    rgba(122,112,96,.035) 0 2px, transparent 2px 7px);
+  --weave: none;
   /* mobile card, day: lighter than the sheet behind it (#FBF6E9) rather
      than the darker --ink3 tan this used to be, separated by one soft
      shadow instead of the edge+lift stack. See --surface / --card-shadow
@@ -356,7 +370,7 @@ body {
   font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--secondary);
 }
 .map-unavailable-h { font-size: 15px; font-weight: 700; color: var(--bone); }
-#map .maplibregl-ctrl-attrib { background: rgba(19,16,25,.7); }
+#map .maplibregl-ctrl-attrib { background: rgba(20,18,21,.7); }
 #map .maplibregl-ctrl-attrib a { color: var(--secondary); }
 
 /* milky tint — canvas only, never the container (markers live in the container) */
@@ -569,7 +583,7 @@ body {
      light theme's placeholder was cream-on-cream — 2.08:1 for the question
      line, measured, for however long the image took to load. Dark in both
      themes it measures 13.5:1. */
-  background: #241E31;
+  background: #242126;
 }
 /* object-position is set inline per image by homeDiscoverHeaderHtml()
    (HOME_HERO_IMAGES in app.js) because the hero's images are not all the
@@ -598,10 +612,10 @@ body {
 .home-hero-scrim {
   position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(to bottom,
-    rgba(19,16,25, var(--hero-veil, .80)) 0,
-    rgba(19,16,25, var(--hero-veil, .80)) 124px,
-    rgba(19,16,25,.26) 78%,
-    rgba(19,16,25,.50));
+    rgba(20,18,21, var(--hero-veil, .80)) 0,
+    rgba(20,18,21, var(--hero-veil, .80)) 124px,
+    rgba(20,18,21,.26) 78%,
+    rgba(20,18,21,.50));
 }
 .home-hero-text {
   position: absolute; top: 22px; left: var(--sheet-pad-x); right: var(--sheet-pad-x);
@@ -618,7 +632,9 @@ body {
   display: flex; align-items: center; gap: 10px;
   margin: -28px 2px 0; padding: 0 16px; min-height: 52px; border-radius: 16px;
   background-color: var(--ink3); background-image: var(--card-fill);
-  box-shadow: var(--card-edge), var(--card-lift), 0 8px 20px rgba(0,0,0,.18);
+  /* flat field, no drop shadow: it sits on the photo's lower edge as a
+     surface, not a floating slab */
+  box-shadow: var(--card-edge), var(--card-lift);
   color: var(--mute); cursor: text;
 }
 .home-search-ico { display: flex; line-height: 0; }
@@ -2737,7 +2753,7 @@ body {
    already, so it never intercepts a tile tap. */
 .vd-hero::after {
   content: ''; position: absolute; inset: auto 0 0 0; height: 96px;
-  background: linear-gradient(180deg, rgba(19,16,25,0), rgba(19,16,25,.55));
+  background: linear-gradient(180deg, rgba(20,18,21,0), rgba(20,18,21,.55));
   pointer-events: none;
 }
 /* both corner clusters are flex rows, so the back arrow and the status pill
@@ -2767,7 +2783,7 @@ body {
   flex-shrink: 0; width: 40px; height: 40px; padding: 0;
   border: none; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(19,16,25,.62); color: #F5F1E8;
+  background: rgba(20,18,21,.62); color: #F5F1E8;
   font-family: var(--font); font-size: 15px; line-height: 1; cursor: pointer;
 }
 .vd-round svg { display: block; }
@@ -3065,7 +3081,7 @@ body {
 .collage-row { flex: 1 1 0; min-height: 0; display: flex; gap: 2px; }
 .collage-more {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(19,16,25,.55); color: #F5F1E8; font-size: 20px; font-weight: 700;
+  background: rgba(20,18,21,.55); color: #F5F1E8; font-size: 20px; font-weight: 700;
 }
 /* centred on the monogram while loadCollageCardPhotos() swaps a tile from
    its monogram src to the real photo — see the .is-loading toggle in
@@ -3081,7 +3097,7 @@ body {
    content rather than the theme background */
 .collage-scrim {
   position: absolute; left: 0; right: 0; bottom: 0; height: 45%;
-  background: linear-gradient(to top, rgba(19,16,25,.92), rgba(19,16,25,.72) 55%, rgba(19,16,25,0));
+  background: linear-gradient(to top, rgba(20,18,21,.92), rgba(20,18,21,.72) 55%, rgba(20,18,21,0));
   pointer-events: none;
 }
 .collage-info {
@@ -3858,7 +3874,7 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
    language (see the two-step remove flow in edRenderPhotos() in app.js) */
 .ed-photo-confirm {
   position: absolute; inset: 0; border-radius: 10px;
-  background: rgba(19,16,25,.94); display: flex; flex-direction: column;
+  background: rgba(20,18,21,.94); display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 4px; padding: 6px;
   text-align: center;
 }

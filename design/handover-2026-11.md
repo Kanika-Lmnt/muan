@@ -90,3 +90,26 @@ TODO(lao) strings added: ເປີດຢູ່ບໍ່? · ໃກ້ຂ້ອ�
 2. Open an Ask-a-friend link in a private tab: straight to the venue.
 3. Spin tile on Home; On fire swipe.
 4. Sign in, submit a test venue: you see it, a private tab doesn't.
+
+## 6. Dark theme: palette and depth (second pass)
+
+Kar's notes: dark mode felt off, had stripes, and the UI and search
+"protrude". What dark-UI guidance says (Material's dark theme, and the
+common practice it set): don't use shadows for depth on near-black — they
+barely read — show elevation with lighter surfaces instead; keep the chrome
+neutral so photos and the one accent carry the colour; avoid busy texture.
+
+- Night neutrals moved off the blue-violet cast: #131019/#1C1726/#241E31/
+  #2E2740 → #141215/#1B181C/#242126/#2F2B31 (faint plum warmth kept).
+  --mute #948F9D → #A39D9F, --dim #5A5468 → #6E6870. Contrast: body text
+  15.4:1 on the sheet, --mute 6.6:1 on the sheet and 6.0:1 on a card.
+  **CLAUDE.md's "Design tokens" line still lists the old ink values — update
+  it when you merge.**
+- The diagonal weave texture is off in both themes (--weave: none; the
+  token stays for a real Lao textile motif later).
+- Flat surfaces in dark: no gradient fill, no bright top edge, no drop
+  shadow on cards, tiles, the search bar or the bottom nav. A card is
+  separated from the page by one tone step plus a 1px hairline.
+- The search bar no longer carries its own extra drop shadow (both themes).
+- Splash, theme-color and the PWA manifest use the new base colour.
+- Photo scrims use the new ink value.

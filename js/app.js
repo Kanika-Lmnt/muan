@@ -1749,7 +1749,7 @@ function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName
     <div class="fl-card fl-card-flame">
       <div class="fl-flame" data-heat="${me.heat_level}">
         ${flameHtml}
-        <div class="fl-streak">${me.streak_months}</div>
+        <div class="fl-streak">${me.streak_now ?? me.streak_months}</div>
       </div>
       <div class="fl-stage">${stageLabels[me.phai_stage]} · <span class="lao">${stageLo[me.phai_stage]}</span></div>
       <div class="fl-sub">${esc(heatLines[me.heat_level] || '')}</div>
@@ -1757,6 +1757,7 @@ function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName
       <div class="fl-rhythm">${nights
         ? `<b>${nights}</b> ${nights === 1 ? 'night' : 'nights'} out in ${monthName}`
         : `no nights out yet in ${monthName}`}</div>
+      ${streakLineHtml(me)}
     </div>`;
 }
 
@@ -1897,7 +1898,7 @@ function nextUpHtml(me, items, stageLabels, stageLo) {
     goals.push({
       ico: `<span class="fl-goal-ico">${badgeIcon({ id: 'regular' }, 20)}</span>`,
       title: 'Regular badge',
-      sub: `${Math.max(0, 5 - best)} more visits to your favourite place`,
+      sub: `${plural(Math.max(0, 5 - best), 'more visit', 'more visits')} to your favourite place`,
       p: best / 5,
     });
   }
@@ -1995,6 +1996,106 @@ function bindSavedCard(root) {
   }));
 }
 
+/* ---------- streak line + monthly recap (You screen) ----------
+   The streak is monthly on purpose: one night out a month keeps it, which is
+   the low bar that keeps streaks motivating rather than stressful. These
+   lines only ever say what keeps it going or how to start again — never
+   "you lost it". streak_state comes from /api/me. */
+function streakLineHtml(me) {
+  const n = me.streak_now ?? me.streak_months ?? 0;
+  const st = me.streak_state;
+  if (st === 'safe' && n > 0) {
+    return `<div class="fl-streak-line">This month counts — your ${n}-month streak is safe.</div>`;
+  }
+  if (st === 'at_risk' && n > 0) {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const daysLeft = Math.max(0, end.getDate() - now.getDate());
+    const when = daysLeft === 0 ? 'today'
+      : daysLeft > 6 ? `in ${now.toLocaleString('en-GB', { month: 'long' })}`
+      : `in the next ${plural(daysLeft + 1, 'day', 'days')}`;
+    return `<div class="fl-streak-line at-risk">One check-in ${when} keeps your ${n}-month streak going.</div>`;
+  }
+  if (st === 'lapsed') {
+    return `<div class="fl-streak-line">Your streak is resting — one check-in starts a new one.</div>`;
+  }
+  return '';
+}
+
+function recapMonthName(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleString('en-GB', { month: 'long' });
+}
+
+// last month, in four numbers and a place
+function recapCardHtml(me) {
+  const r = me.recap;
+  if (!r) return '';
+  const top = r.top_count >= 2 ? venueById(r.top_venue) : null;
+  return `
+    <div class="fl-card fl-card-recap">
+      <div class="fl-card-h">Your ${esc(recapMonthName(r.month))}</div>
+      <div class="fl-recap-stats">
+        <div><b>${r.nights}</b><span>${r.nights === 1 ? 'night out' : 'nights out'}</span></div>
+        <div><b>${r.new_places}</b><span>${r.new_places === 1 ? 'new place' : 'new places'}</span></div>
+        <div><b>${r.checkins}</b><span>${r.checkins === 1 ? 'check-in' : 'check-ins'}</span></div>
+      </div>
+      ${top ? `<div class="fl-recap-top">Most visited: <b>${esc(top.short_name || top.name)}</b> · ${r.top_count}×</div>` : ''}
+      <button type="button" class="fl-recap-share" data-share-recap>Share my ${esc(recapMonthName(r.month))}</button>
+    </div>`;
+}
+
+// a 1080×1920 story image of the recap, drawn on a canvas — everything on it
+// is the app's own (cream ground, ink type, coral, Phai), so nothing
+// cross-origin can taint the canvas
+async function recapImageBlob(me) {
+  const r = me.recap;
+  const top = r.top_count >= 2 ? venueById(r.top_venue) : null;
+  const W = 1080, H = 1920;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  try { await Promise.all(['700 120px "Space Grotesk"', '500 48px "Space Grotesk"', '700 80px "Noto Sans Lao"'].map(f => document.fonts.load(f))); } catch (e) {}
+  const font = (w, s, fam = 'Space Grotesk') => `${w} ${s}px "${fam}", system-ui, sans-serif`;
+  g.fillStyle = '#FFFCF5'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#FFE9DF'; g.beginPath(); g.arc(W / 2, 760, 330, 0, Math.PI * 2); g.fill();
+  g.textAlign = 'center';
+  g.fillStyle = '#E8462A'; g.font = font(700, 40); g.fillText('P A I S A I D E E', W / 2, 190);
+  g.fillStyle = '#2A2419'; g.font = font(700, 70, 'Noto Sans Lao'); g.fillText('ໄປໃສດີ', W / 2, 290);
+  g.font = font(700, 120); g.fillText(`My ${recapMonthName(r.month)}`, W / 2, 450);
+  const phai = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'assets/mascot/phai-delighted.svg'; });
+  if (phai) g.drawImage(phai, W / 2 - 200, 520, 400, 480);
+  const stats = [[r.nights, r.nights === 1 ? 'night out' : 'nights out'], [r.new_places, r.new_places === 1 ? 'new place' : 'new places'], [r.checkins, r.checkins === 1 ? 'check-in' : 'check-ins']];
+  stats.forEach(([n, l], i) => {
+    const x = W / 2 + (i - 1) * 320;
+    g.fillStyle = '#E8462A'; g.font = font(700, 130); g.fillText(String(n), x, 1250);
+    g.fillStyle = '#6B6151'; g.font = font(500, 42); g.fillText(l, x, 1320);
+  });
+  g.fillStyle = '#2A2419'; g.font = font(500, 50);
+  g.fillText(top ? `Most visited: ${top.short_name || top.name}` : 'in Vientiane', W / 2, 1500);
+  g.fillStyle = '#E8462A'; g.beginPath(); if (g.roundRect) g.roundRect(W / 2 - 300, 1690, 600, 110, 55); else g.rect(W / 2 - 300, 1690, 600, 110); g.fill();
+  g.fillStyle = '#FFFCF5'; g.font = font(700, 46); g.fillText(location.host, W / 2, 1762);
+  return new Promise(res => c.toBlob(res, 'image/png'));
+}
+
+async function shareRecap(me) {
+  const r = me.recap;
+  const top = r.top_count >= 2 ? venueById(r.top_venue) : null;
+  const text = `My ${recapMonthName(r.month)} in Vientiane: ${plural(r.nights, 'night out', 'nights out')}, ` +
+    `${plural(r.new_places, 'new place', 'new places')}${top ? `, most visited ${top.short_name || top.name}` : ''}. ໄປໃສດີ?`;
+  try {
+    const blob = await recapImageBlob(me);
+    const file = blob && new File([blob], `paisaidee-${r.month}.png`, { type: 'image/png' });
+    if (file && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], text, title: 'Paisaidee' });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    console.warn('[muan] recap image share failed, sharing text instead', e);
+  }
+  return shareOrCopy({ title: 'Paisaidee', text, url: location.origin + '/', copied: 'Copied — paste it anywhere' });
+}
+
 // the normal You screen — the flame (or an invitation in its place), the
 // identity card, then the plain owner/admin rows. Split out of
 // openFlameSheet() so renderFlameIntro()'s "Got it" can hand off into it
@@ -2023,6 +2124,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
         ? flameInviteHtml(flameHtml, me.total_checkins)
         : flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName)}
 
+      ${recapCardHtml(me)}
       ${inviting ? '' : nextUpHtml(me, items, stageLabels, stageLo)}
       ${yourCityHtml(me)}
       ${savedCardHtml()}
@@ -2058,6 +2160,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   if (sheet) sheet.scrollTop = 0;
   pauseFlameIfReducedMotion();
   bindSavedCard(document.getElementById('sheetInner'));
+  document.querySelector('[data-share-recap]')?.addEventListener('click', () => shareRecap(me));
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
 

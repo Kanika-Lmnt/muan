@@ -53,6 +53,42 @@ export async function onRequest(context) {
 
     const { heat, heat_level } = await computeHeat(db, user.id);
 
+    // the streak as it stands TODAY. users.streak_months is only written on a
+    // check-in, so after a gap it still holds the old run; a streak whose
+    // last month is neither this month nor last month has lapsed.
+    const prevD = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1));
+    const prevMonth = prevD.toISOString().slice(0, 7);
+    const lastMonth = user.last_checkin_month || null;
+    const streakState = lastMonth === month ? 'safe'
+      : lastMonth === prevMonth ? 'at_risk'
+      : (user.streak_months || 0) > 0 ? 'lapsed' : 'none';
+    const streakNow = streakState === 'safe' || streakState === 'at_risk' ? (user.streak_months || 0) : 0;
+
+    // recap of LAST month, from its check-ins: nights out (distinct days),
+    // check-ins, places visited for the first time ever, most-visited place
+    const prevRows = await db.prepare(
+      "SELECT venue_id, created_at FROM checkins WHERE user_id=? AND substr(created_at,1,7)=? ORDER BY created_at"
+    ).bind(user.id, prevMonth).all();
+    let recap = null;
+    if (prevRows.results.length) {
+      const firsts = await db.prepare(
+        'SELECT venue_id, MIN(created_at) AS first FROM checkins WHERE user_id=? GROUP BY venue_id'
+      ).bind(user.id).all();
+      const firstMonth = Object.fromEntries(firsts.results.map(r => [r.venue_id, String(r.first).slice(0, 7)]));
+      const per = {};
+      prevRows.results.forEach(r => { per[r.venue_id] = (per[r.venue_id] || 0) + 1; });
+      const top = Object.entries(per).sort((a, b) => b[1] - a[1])[0];
+      recap = {
+        month: prevMonth,
+        nights: new Set(prevRows.results.map(r => String(r.created_at).slice(0, 10))).size,
+        checkins: prevRows.results.length,
+        places: Object.keys(per).length,
+        new_places: Object.keys(per).filter(id => firstMonth[id] === prevMonth).length,
+        top_venue: top[0],
+        top_count: top[1],
+      };
+    }
+
     // first-ever sign-in only; a returning account with real check-ins
     // (e.g. a new device) already knows what the flame is
     const showIntro = !user.intro_seen && (total?.c || 0) === 0;
@@ -88,6 +124,9 @@ export async function onRequest(context) {
       ember_new_venue: Number(cfgMap.ember_new_venue ?? 25),
       ember_repeat: Number(cfgMap.ember_repeat ?? 5),
       all_badges: allBadges.results,
+      streak_state: streakState,
+      streak_now: streakNow,
+      recap,
       venues_explored: venues?.c || 0,
       total_checkins: total?.c || 0,
       badges: badgeRows.results,

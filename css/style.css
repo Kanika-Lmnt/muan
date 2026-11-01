@@ -4419,3 +4419,17 @@ textarea:focus-visible,
 .open-toggle.on { border-color: var(--teal); color: var(--teal); }
 .open-toggle.on .open-toggle-dot { background: var(--teal); }
 .open-toggle.on .open-toggle-n { background: var(--teal); color: var(--ink); }
+
+/* streak line under the flame (streakLineHtml()) and last month's recap */
+.fl-streak-line { margin-top: 8px; font-size: 12.5px; color: var(--secondary); }
+.fl-streak-line.at-risk { color: var(--flame-text); font-weight: 600; }
+.fl-recap-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.fl-recap-stats b { display: block; font-size: 28px; color: var(--flame-text); line-height: 1.1; }
+.fl-recap-stats span { font-size: 12px; color: var(--secondary); }
+.fl-recap-top { margin-top: 12px; text-align: center; font-size: 13px; color: var(--secondary); }
+.fl-recap-top b { color: var(--bone); }
+.fl-recap-share {
+  display: block; width: 100%; min-height: 44px; margin-top: 14px; border-radius: 999px;
+  border: 1px solid var(--ink4); background: var(--ink); color: var(--bone);
+  font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer;
+}

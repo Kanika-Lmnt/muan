@@ -385,12 +385,22 @@ export async function onRequest(context) {
     // incremented in place: this used to write back user.embers_total + n,
     // read when the request began, so two concurrent check-ins each wrote
     // their own total and one silently erased the other's embers
+    //
+    // Streak: same month → unchanged; the month straight after the last one
+    // → +1; any longer gap → a fresh streak of 1. It used to be "+1 for any
+    // new month", so a streak never broke — three months off and back again
+    // still counted as an unbroken run.
+    const prev = new Date(Date.UTC(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)) - 2, 1));
+    const previousMonth = prev.toISOString().slice(0, 7);
     await context.env.DB.prepare(
       `UPDATE users SET embers_total = embers_total + ?,
-         streak_months = CASE WHEN last_checkin_month = ? THEN streak_months ELSE streak_months + 1 END,
+         streak_months = CASE
+           WHEN last_checkin_month = ? THEN streak_months
+           WHEN last_checkin_month = ? THEN streak_months + 1
+           ELSE 1 END,
          last_checkin_month = ?
        WHERE id = ?`
-    ).bind(embersEarned, currentMonth, currentMonth, user.id).run();
+    ).bind(embersEarned, currentMonth, previousMonth, currentMonth, user.id).run();
     const totals = await context.env.DB.prepare('SELECT embers_total, streak_months FROM users WHERE id = ?')
       .bind(user.id).first();
     const embersTotal = totals.embers_total;

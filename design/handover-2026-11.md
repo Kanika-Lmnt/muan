@@ -200,3 +200,22 @@ strips comments and minifies at deploy (app.js would drop to roughly
 60KB gzipped) — but "no build step" is a deliberate project rule, so that
 is Kar's call. The bigger download is maplibre-gl.js (~830KB from unpkg),
 which already loads async.
+
+## 12. Streaks and monthly recap (fifth pass)
+
+- **Bug fixed — the monthly streak never broke.** checkin.js added +1 for
+  ANY new month, so three months off and one check-in still counted as an
+  unbroken run. Now: same month → unchanged, the next month → +1, a gap →
+  a fresh streak of 1 (checked for the January rollover too).
+- /api/me now says where the streak stands today (`streak_state`: safe /
+  at_risk / lapsed / none, and `streak_now`), because users.streak_months is
+  only written on a check-in and goes stale after a gap.
+- **Kind streak line** under the flame: "One check-in in November keeps
+  your 3-month streak going" (at risk, in coral), "This month counts — your
+  3-month streak is safe", or "Your streak is resting — one check-in starts
+  a new one". Never "you lost it".
+- **"Your October" recap** on You, from last month's check-ins: nights out,
+  new places (first-ever visits), check-ins, and most visited (only when a
+  place was visited 2+ times). **Share my October** makes a 1080×1920 story
+  image (cream, Phai, the numbers, the site address) and opens the phone's
+  share sheet; where image sharing isn't supported it shares/copies text.

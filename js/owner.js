@@ -645,6 +645,9 @@ function wireVenueSubmitForm() {
 
       // straight into the normal dashboard editor — photos and any further
       // edits happen there from here on
+      // pending venues are no longer in the public list (see publicVenues()
+      // in app.js), so put this one into the owner's own view of it
+      addOwnPending(data.venue);
       openVenueEditor(data.venue, { justSubmitted: true });
     } catch (e) {
       saveNote.hidden = false;

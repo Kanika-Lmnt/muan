@@ -1,5 +1,6 @@
 import { sessionCookie } from '../_auth.js';
 import { pickHandle } from '../_handle.js';
+import { rateLimit } from '../_ratelimit.js';
 
 const GOOGLE_CLIENT_ID = '768624583305-553qrbhib2mqbbi10ifsr18b8uqu4uvk.apps.googleusercontent.com';
 
@@ -7,6 +8,8 @@ export async function onRequest(context) {
   if (context.request.method !== 'POST') {
     return Response.json({ ok: false, error: 'method not allowed' }, { status: 405 });
   }
+  const limited = await rateLimit(context, 'auth', 15, 60);
+  if (limited) return limited;
 
   try {
     const body = await context.request.json().catch(() => null);

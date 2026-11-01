@@ -49,7 +49,7 @@ async function handleGet(context) {
               description, photos, hours, hours_note, contact, parking, links,
               verified, status, source, signature, pin_status, vibe, outdoor,
               why, rating, review_count, logo
-       FROM venues WHERE pin_status != 'rejected' ORDER BY rowid`
+       FROM venues WHERE pin_status = 'placed' ORDER BY rowid`
     ).all();
 
     /* Zero venues is treated as a failure, not as a result. This app has
@@ -150,7 +150,7 @@ async function handleGet(context) {
     // against --remote) stays diagnosable — see CLAUDE.md's workflow rules
     console.error('venues fetch failed, serving bundled fallback:', e);
     return Response.json(
-      { venues: venuesFallback.venues.filter(v => v.pin_status !== 'rejected'), stale: true },
+      { venues: venuesFallback.venues.filter(v => v.pin_status === 'placed'), stale: true },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   }

@@ -110,13 +110,20 @@ function main() {
   const parsed = JSON.parse(raw);
   const rows = parsed[0].results;
 
-  const venues = rows.map(rowToVenue);
+  // placed venues only. data/venues.json ships with every deploy (first
+  // paint and /api/venues' outage fallback both read it), so it is public:
+  // a pending owner submission is unreviewed text and a rejected one was
+  // turned down, and neither belongs in a file anyone can fetch. Their rows
+  // are still in D1; /api/pending is where Kar reviews them.
+  const venues = rows.filter((r) => r.pin_status === 'placed').map(rowToVenue);
+  const skipped = rows.length - venues.length;
   const output = { _schema_notes: SCHEMA_NOTES, venues };
 
   const venuesPath = path.join(__dirname, '..', 'data', 'venues.json');
   fs.writeFileSync(venuesPath, JSON.stringify(output, null, 2) + '\n');
 
-  console.log(`Exported ${venues.length} venues from D1 to ${venuesPath}`);
+  console.log(`Exported ${venues.length} venues from D1 to ${venuesPath}` +
+    (skipped ? ` (left out ${skipped} pending/rejected)` : ''));
 }
 
 main();

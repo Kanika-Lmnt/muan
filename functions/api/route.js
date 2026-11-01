@@ -1,3 +1,4 @@
+import { rateLimit } from './_ratelimit.js';
 /* must mirror the maxBounds used in initMap() (js/app.js) */
 const BOUNDS = { minLng: 102.45, minLat: 17.85, maxLng: 102.82, maxLat: 18.15 };
 const MODES = ['driving-car', 'foot-walking'];
@@ -74,6 +75,11 @@ export async function onRequest(context) {
     if (cached) return cached;
 
     // mode must be a valid ORS profile — 'driving-car' or 'foot-walking'
+    // only cache misses spend the OpenRouteService quota, so only they are
+    // counted; a limited caller gets the same {ok:false} the app already
+    // falls back from (the straight-line estimate)
+    const limited = await rateLimit(context, 'route', 20, 60);
+    if (limited) return Response.json({ ok: false }, { status: 200 });
     const orsUrl = `https://api.openrouteservice.org/v2/directions/${mode}/geojson`;
 
     const orsRes = await fetch(orsUrl, {

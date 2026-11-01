@@ -104,6 +104,7 @@ const state = {
   cafeTab: 'recommended', // 'recommended' | 'all' — sub-tab inside the Cafes filter
   distanceFilterM: null,  // null (Any) | 500 | 1000 | 3000 | 5000 — see withinDistance()
   homeQuery: '',          // the Discover search box — see wireHomeSearch()
+  ownPending: [],         // this owner's own pending submissions — see publicVenues()
   screen: 'home',           // mobile only: 'home' | 'map' | 'you' — see setMobileScreen()
   screenBeforeVenue: null,  // mobile only: screen to return to when the open venue closes
   venuePushed: false,       // mobile only: whether openVenue() pushed a history entry for the open venue
@@ -471,7 +472,37 @@ const venuesFingerprint = list => JSON.stringify(canonicalise(list));
 // a straight dump of the table with no such filter, so the same rule has to
 // be applied here — otherwise the bundle would briefly show a venue the API
 // never returns, and would register as a "differs" on every single load.
-const publicVenues = list => (list || []).filter(v => v.pin_status !== 'rejected');
+/* What the app lists. Rejected venues never; PENDING owner submissions only
+   to the person who submitted them. A pending venue is unreviewed text from
+   any Google account (name, tagline, description), and it used to be served
+   to every visitor the moment it was submitted — so anyone could put
+   anything on Home without Kar seeing it first. /api/venues no longer
+   returns pending rows; the submitter's own come from /api/my-venues
+   (loadOwnPending()) and are appended here, so the owner still sees their
+   submission went through, as CLAUDE.md asks. */
+const publicVenues = list => {
+  const out = (list || []).filter(v => v.pin_status !== 'rejected' && v.pin_status !== 'pending');
+  const have = new Set(out.map(v => v.id));
+  return out.concat(state.ownPending.filter(v => !have.has(v.id)));
+};
+
+// the signed-in owner's pending submissions, merged into the list
+function setOwnPending(list) {
+  state.ownPending = (list || []).filter(v => v.pin_status === 'pending');
+  state.venues = publicVenues(state.venues);
+  syncTypeChips();
+  renderMarkers();
+  if (state.sheetView.type === 'home') renderHomeSheet();
+}
+async function loadOwnPending() {
+  const r = await fetchMyVenues();
+  if (r.ok && r.venues.some(v => v.pin_status === 'pending')) setOwnPending(r.venues);
+}
+// called by js/owner.js right after a successful submission
+function addOwnPending(v) {
+  if (!v || v.pin_status !== 'pending') return;
+  setOwnPending(state.ownPending.filter(x => x.id !== v.id).concat([v]));
+}
 
 // swaps the bundle out for the live list, but only when it actually says
 // something different. In the common case (mirror in sync with D1) this
@@ -672,7 +703,10 @@ async function boot() {
     // emoji fallback it already shows.
     const mePromise = fetch('/api/me').then(r => r.json()).catch(() => ({ ok: false }));
     mePromise.then(me => {
-      if (me?.ok && !me.signed_out) applyAvatarUrl(me.avatar_url || null);
+      if (me?.ok && !me.signed_out) {
+        applyAvatarUrl(me.avatar_url || null);
+        loadOwnPending().catch(() => {});
+      }
     });
     // renderHomeSheet() before the map, not after: the list is the content
     // of the first screen and needs neither tiles nor maplibre-gl.js, which
@@ -745,12 +779,21 @@ async function boot() {
     // user is still looking at it. geoAutoAttempted guarantees exactly one
     // attempt per session: denied/unavailable/timeout all fall back to the
     // curated order with nothing said about it, and nothing here asks again.
-    if (!state.geoAutoAttempted) {
+    // ...except on a first run that is about to show the welcome flow: its
+    // location page explains why before asking, and a cold browser prompt
+    // firing underneath the splash would get the "Block" tap that page is
+    // there to avoid. If the flow ends up not showing after all (a
+    // signed-in account that has already seen it on another device), the
+    // intro decision below falls back to this same auto-ask.
+    const autoLocate = () => {
+      if (state.geoAutoAttempted) return;
       state.geoAutoAttempted = true;
       requestLocation().then(pos => {
         if (pos && state.sheetView.type === 'home') renderHomeSheet();
       });
-    }
+    };
+    const firstRun = moodIntroPossible() && !deepLinkId && !deepLinkWheel;
+    if (!firstRun) autoLocate();
 
     bindChips();
     bindLocate();
@@ -835,7 +878,10 @@ async function boot() {
     // meant a list that had finished rendering at half a second stayed
     // invisible for several more. moodIntroPossible() is checked once and
     // reused below so the two decisions can't disagree.
-    const introPending = moodIntroPossible();
+    // a first visit that arrives on a shared link (?v= or ?wheel=) gets the
+    // thing it was sent, not a welcome tour in front of it; the tour waits
+    // for their next plain visit (nothing is marked seen here)
+    const introPending = firstRun;
     if (!introPending) dismissSplash();
 
     // the one point in the app that has to wait for maplibre-gl.js —
@@ -936,6 +982,8 @@ async function boot() {
       if (shouldShowMoodIntro(me)) {
         await preloadWelcomeSlides();
         showMoodIntro();
+      } else {
+        autoLocate();
       }
     }
   } catch (err) {
@@ -2980,10 +3028,14 @@ function seededShuffle(list, rng) {
    Capped at WHEEL_MAX_SLICES from the front of sortForDisplay(), which
    orders open-then-nearest — so an over-full wheel keeps the NEAREST eight,
    which is the same "near means something" weighting quickSurpriseMe() had. */
+// the Home wheel tile's pool: every kind of place you can walk into and
+// sit down at — not events (no venue-driven pick) or generic venues (malls)
+const WHEEL_ALL_TYPES = ['bar', 'cafe', 'restaurant'];
 function wheelCandidates(filter) {
   return sortForDisplay(state.venues.filter(v =>
     v.pin_status !== 'pending' && v.lat != null && v.lng != null &&
-    v.type === filter && openStatus(v).open && withinDistance(v)
+    (filter === 'all' ? WHEEL_ALL_TYPES.includes(v.type) : v.type === filter) &&
+    openStatus(v).open && withinDistance(v)
   )).slice(0, WHEEL_MAX_SLICES);
 }
 
@@ -4111,99 +4163,134 @@ function anyVibeTagged() {
   return state.venues.some(v => (v.vibe || []).length > 0);
 }
 
-// the 3 welcome panels that now precede the mood question (see
-// showMoodIntro()) — Cloudinary public IDs only, same "v<digits>/<publicId>"
-// shape as venue/event photos, rendered through cloudinaryUrl() rather than
-// a hardcoded full URL (see CLAUDE.md). titleLao marks slide 1's heading as
-// Lao script (gets the .lao font-feature class); slides 2-3 don't have a
-// Lao heading yet — TODO(Kar): write and add one for each.
+// The first-run flow: four welcome pages, then the "ຢາກໄປໃສດີ?" mood
+// question as the last page when any venue carries a vibe tag.
 //
-// Two illustrations per panel — night scenes for the dark theme, daytime
-// cream ones for the light theme — held on the one slide definition rather
-// than in a second parallel array. A second array would have to be kept the
-// same length and in the same order as this one by hand, with nothing to
-// catch it drifting; here a panel's copy and both of its images move
-// together. welcomePhoto() picks between them at render time.
+// Each page teaches one thing the app actually does, in the order a new
+// visitor needs it:
+//   hello  — what this is
+//   open   — hours are real, and teal means open right now (with a live
+//            count read off the venues already loaded, never a made-up one)
+//   near   — the location ask, primed here instead of cold the first time
+//            someone taps Directions; "Not now" is always one tap away
+//   flame  — check-ins, embers and Phai, and that sign-in can wait
+//
+// Photos are Cloudinary public IDs (same "v<digits>/<publicId>" shape as
+// venue photos, rendered through cloudinaryUrl()). Two per page: a night
+// set for the dark theme and a daytime set for light. The flame page has
+// none on purpose — it is Phai's page.
+//
+// TODO(lao): titleLo on pages 2–4 (ເປີດຢູ່ບໍ່?, ໃກ້ຂ້ອຍ, ເຊັກອິນ) — the
+// words are already used elsewhere in the app, but these exact headings
+// want Kar's check.
 const WELCOME_SLIDES = [
   {
+    key: 'hello',
     photoDark: 'v1788009913/ChatGPT_Image_Aug_29_2026_06_31_59_PM_vivr57',
     photoLight: 'v1788348856/cafecard1_egqeb6',
-    title: 'ໄປໃສດີ?', titleLao: true,
-    sub: 'Find places to go in Vientiane.',
+    phai: 'phai-idle',
+    titleLo: 'ໄປໃສດີ?',
+    title: 'Where should we go?',
+    body: 'Cafés, bars and what’s on in Vientiane — every place checked by us, not scraped off the internet.',
   },
   {
+    key: 'open',
     photoDark: 'v1788009913/ChatGPT_Image_Aug_29_2026_06_37_27_PM_kvbxej',
     // PLACEHOLDER, until this one is regenerated: the signage in it is not
     // real Lao, and the scene shows water that is not there.
     photoLight: 'v1788348889/ilustait2_u0sfrv',
-    title: 'Checked by us', titleLao: false,
-    sub: 'Real opening times and real photos.',
+    phai: 'phai-delighted',
+    titleLo: 'ເປີດຢູ່ບໍ່?',
+    title: 'Know what’s open',
+    body: 'Real opening hours for every place, so you never walk up to a shut door.',
   },
   {
+    key: 'near',
     photoDark: 'v1788009908/ChatGPT_Image_Aug_29_2026_06_38_56_PM_gmszju',
     photoLight: 'v1788348856/cafecard2_tuubpu',
-    title: 'See what is near you', titleLao: false,
-    sub: 'Find the way there on the map.',
+    phai: 'phai-looking-over',
+    titleLo: 'ໃກ້ຂ້ອຍ',
+    title: 'Close to you',
+    body: 'Turn on location to sort places by distance and get directions. We only keep it when you check in.',
+  },
+  {
+    key: 'flame',
+    phai: 'phai-idle',
+    titleLo: 'ເຊັກອິນ',
+    title: 'Check in, keep your flame lit',
+    body: 'Out somewhere? Check in to earn embers and watch Phai grow. Sign in with Google from the You tab whenever you like.',
   },
 ];
 
-// which of a panel's two illustrations the current theme wants. Reads
-// state.theme — the resolved 'light'/'dark' the rest of the app renders
-// from, set by initTheme()/applyTheme() — rather than taking the theme as a
-// parameter at every call site, so the carousel cannot end up showing the
-// night set on a cream page. Falls back to the night set if state.theme is
-// somehow unset: that is the pair this flow shipped with.
+// which of a page's two illustrations the current theme wants (null for a
+// page with none). Reads state.theme — the resolved 'light'/'dark' the rest
+// of the app renders from — so the flow cannot end up showing the night
+// set on a cream page.
 function welcomePhoto(s) {
+  if (!s.photoDark) return null;
   return state.theme === 'light' ? s.photoLight : s.photoDark;
 }
 
-// page dots, rendered once per welcome panel rather than once for the whole
-// flow. "Below the illustration, just above the copy" is a position that
-// only exists inside a slide, and .mi-viewport scrolls, so a single shared
-// row could not sit there — it would either scroll away with one slide or
-// have to be absolutely positioned at a hardcoded copy of .mi-illus's
-// height, which is exactly the kind of duplicated constant that drifts.
-// Every row carries every dot and they are all kept in sync by
-// data-mi-dot index (see the scroll listener in showMoodIntro()), so what
-// reads as one indicator is really one per page. aria-hidden because the
-// slide position is decoration here, and three duplicated rows would
-// otherwise be announced as a dozen empty elements.
+// "N places open right now", from the venues already in memory — the same
+// openStatus() the list badges use, so the number can never disagree with
+// what Home shows a second later. Pending venues are left out (no
+// confirmed anything yet). Falls back to the plain total when nothing is
+// open, rather than printing "0 open" at 5 am as if the app were broken.
+function welcomeOpenLine() {
+  const live = state.venues.filter(v => v.pin_status !== 'pending');
+  const open = live.filter(v => openStatus(v).open).length;
+  if (open > 0) {
+    return `<div class="mi-live"><span class="mi-live-dot" aria-hidden="true"></span>${open} ${open === 1 ? 'place is' : 'places are'} open right now</div>`;
+  }
+  return live.length ? `<div class="mi-live mi-live-quiet">Hours for all ${live.length} places</div>` : '';
+}
+
+function welcomeSlideHtml(s, i) {
+  const photo = welcomePhoto(s);
+  const art = photo
+    ? `<div class="mi-illus"><img src="${esc(cloudinaryUrl(photo, 800))}" alt="" loading="eager"></div>
+       <img class="mi-phai" src="assets/mascot/${s.phai}.svg" alt="" width="200" height="240" draggable="false">`
+    : `<div class="mi-stage" aria-hidden="true">
+         <span class="mi-glow"></span>
+         ${[0, 1, 2, 3, 4, 5].map(n => `<span class="mi-ember mi-ember-${n}"></span>`).join('')}
+         <img class="mi-phai-big" src="assets/mascot/${s.phai}.svg" alt="" width="200" height="240" draggable="false">
+         <span class="mi-chip">+25 embers · first visit</span>
+       </div>`;
+  const extra = s.key === 'open' ? welcomeOpenLine()
+    : s.key === 'near' ? '<div class="mi-loc" data-mi-loc aria-live="polite"></div>'
+    : '';
+  return `<div class="mi-slide mi-slide-${s.key}" data-mi-index="${i}">
+    <div class="mi-art">${art}</div>
+    <div class="mi-copy">
+      <div class="mi-title lao">${esc(s.titleLo)}</div>
+      <div class="mi-title-en">${esc(s.title)}</div>
+      <p class="mi-sub">${esc(s.body)}</p>
+      ${extra}
+    </div>
+  </div>`;
+}
+
+// one row of page dots in the bottom bar, kept in sync by the scroll
+// listener in showMoodIntro(). aria-hidden: the position is decoration,
+// the pages themselves are what a screen reader walks.
 function miDotsHtml(total, active) {
   return `<div class="mi-dots" aria-hidden="true">${
     Array.from({ length: total }, (_, i) =>
       `<span class="mi-dot${i === active ? ' on' : ''}" data-mi-dot="${i}"></span>`).join('')}</div>`;
 }
 
-function welcomeSlideHtml(s, i, total, active) {
-  return `<div class="mi-slide" data-mi-index="${i}">
-    <div class="mi-illus"><img src="${esc(cloudinaryUrl(welcomePhoto(s), 800))}" alt="" loading="eager"></div>
-    ${miDotsHtml(total, active)}
-    <div class="mi-copy">
-      <div class="mi-title${s.titleLao ? ' lao' : ''}">${esc(s.title)}</div>
-      <div class="mi-sub">${esc(s.sub)}</div>
-    </div>
-  </div>`;
-}
-
-// awaited from boot() before showMoodIntro() ever mounts, so none of the 3
-// illustrations can pop in mid-swipe on a slow connection. Raced against a
-// timeout rather than awaited unconditionally — same philosophy as the map
-// load wait in boot() (see the MAPLIBRE HAZARD note there): past the cap the
-// carousel opens anyway and a still-loading <img> just fills in on its own,
-// because a slow image must not hold the splash hostage forever.
-//
-// Three images, not six: only the set the current theme will actually show.
-// Preloading both sets would double the bytes of the very first screen for
-// every visitor, to cover a theme change that essentially nobody makes
-// during a 4-slide intro — and the splash is held on this. The carousel
-// does handle that change if it happens (see the theme observer in
-// showMoodIntro()); the other set just loads at that point, with a brief
-// pop-in, which is the right side of that trade.
+// awaited from boot() before showMoodIntro() mounts, so no illustration can
+// pop in mid-swipe on a slow connection. Raced against a timeout — a slow
+// image must not hold the splash hostage. Only the current theme's set,
+// plus the mascot files, which are tiny and same-origin.
 function preloadWelcomeSlides() {
-  const loaders = WELCOME_SLIDES.map(s => new Promise(resolve => {
+  const srcs = WELCOME_SLIDES.map(s => welcomePhoto(s)).filter(Boolean)
+    .map(p => cloudinaryUrl(p, 800))
+    .concat([...new Set(WELCOME_SLIDES.map(s => `assets/mascot/${s.phai}.svg`))]);
+  const loaders = srcs.map(src => new Promise(resolve => {
     const img = new Image();
     img.onload = img.onerror = resolve;
-    img.src = cloudinaryUrl(welcomePhoto(s), 800);
+    img.src = src;
   }));
   return Promise.race([
     Promise.all(loaders),
@@ -4221,7 +4308,6 @@ const MOOD_INTRO_KEY = 'psd-mood-intro-seen';
 // "yes" is only a maybe — shouldShowMoodIntro() still gets the final word
 // once mePromise resolves.
 function moodIntroPossible() {
-  if (!anyVibeTagged()) return false;
   try { if (localStorage.getItem(MOOD_INTRO_KEY) === '1') return false; } catch (e) {}
   return true;
 }
@@ -4234,7 +4320,6 @@ function moodIntroPossible() {
 // visitor who dismissed it before signing in isn't shown it again just
 // because the server flag hasn't caught up yet.
 function shouldShowMoodIntro(me) {
-  if (!anyVibeTagged()) return false;
   try { if (localStorage.getItem(MOOD_INTRO_KEY) === '1') return false; } catch (e) {}
   if (me?.ok && !me.signed_out && me.mood_intro_seen) return false;
   return true;
@@ -4264,40 +4349,35 @@ function logMoodPick(tag) {
   }).catch(() => {});
 }
 
-// full-screen intro flow — 3 welcome panels (WELCOME_SLIDES) followed by the
-// "ຢາກໄປໃສດີ?" mood question as its 4th and last slide, a single horizontal
-// swipe carousel (native scroll-snap, not a manual transform — see the
-// .mi-viewport CSS comment for why). Shown automatically once, right as the
-// splash fades (see boot(), which awaits preloadWelcomeSlides() first),
-// gated by shouldShowMoodIntro(). Also reachable any time after via the
-// quiet text link at the bottom of the Cafes list (see moodRelinkHtml()),
-// which calls this same function with startAtMood:true — a manual reopen is
-// someone who already knows what this is, so it jumps straight to the mood
-// slide instead of replaying the 3 panels (still swipeable back to, just
-// not shown by default).
+// Full-screen first-run flow: the four WELCOME_SLIDES pages, then the
+// "ຢາກໄປໃສດີ?" mood question as the last page when any venue carries a
+// vibe tag (no tags, no mood page — there would be nothing to pick from).
+// One horizontal scroll-snap carousel (native swipe, momentum and
+// rubber-banding; no manual transform for a touchcancel to leave stuck).
 //
-// That 4th slide is itself two steps (see showStep() below): first which
-// kind of place — Cafés or Bars, MOOD_TYPES — then the four moods within
-// it, sliding in from the right with a back arrow that returns to step 1
-// and never exits the intro. Both steps live inside the one slide, so the
-// carousel still has exactly 4 pages and step 2 can't be swiped to before
-// a type is chosen. Picking a mood marks the intro seen and opens the
-// normal results popup (openVibePop()), same as a mood card anywhere else;
-// picking a type with no moods yet marks it seen and opens that type's own
-// list (openTypeList()); "Just show me around" (step 1's own link, or the
-// "Skip" link visible on every slide) marks it seen and just closes,
-// leaving whatever screen was already underneath (Home on first open, the
-// Cafes tab on a manual reopen).
+// The bottom bar carries the page dots and one clear primary button whose
+// label follows the page: "Next", "Use my location" on the location page
+// (with "Not now" beside it), and "Let's go" on the last page when there is
+// no mood question. Skip stays in the top-right corner on every page.
+//
+// Shown automatically once, as the splash fades (see boot()). The quiet
+// "ຢາກໄປໃສດີ?" link at the bottom of the Cafes list reopens it with
+// startAtMood:true, straight onto the mood page.
+//
+// The mood page is itself two steps (see showStep() below): first which
+// kind of place — Cafés or Bars, MOOD_TYPES — then the moods within it,
+// sliding in from the right with a back arrow. Both steps live inside the
+// one page, so step 2 can't be swiped to before a type is chosen.
 function showMoodIntro({ startAtMood = false } = {}) {
-  const moodIndex = WELCOME_SLIDES.length; // last slide
+  const hasMood = anyVibeTagged();
+  if (startAtMood && !hasMood) return;
+  const moodIndex = hasMood ? WELCOME_SLIDES.length : -1;
+  const totalSlides = WELCOME_SLIDES.length + (hasMood ? 1 : 0);
+  const lastIndex = totalSlides - 1;
+  const nearIndex = WELCOME_SLIDES.findIndex(s => s.key === 'near');
   const startIndex = startAtMood ? moodIndex : 0;
-  const totalSlides = moodIndex + 1;
 
-  const ov = document.createElement('div');
-  ov.className = 'mood-intro';
-  ov.innerHTML = `
-    <div class="mi-viewport" data-mi-viewport>
-      ${WELCOME_SLIDES.map((s, i) => welcomeSlideHtml(s, i, totalSlides, startIndex)).join('')}
+  const moodSlideHtml = !hasMood ? '' : `
       <div class="mi-slide mi-slide-mood" data-mi-index="${moodIndex}">
         <div class="mood-intro-inner">
           <div class="mood-intro-brand" aria-hidden="true">${logoMark(20, 'var(--ink)')}<span class="mood-intro-brand-word">PAISAIDEE</span></div>
@@ -4326,11 +4406,25 @@ function showMoodIntro({ startAtMood = false } = {}) {
             </div>
           </div>
         </div>
-      </div>
+      </div>`;
+
+  const ov = document.createElement('div');
+  ov.className = 'mood-intro';
+  ov.setAttribute('role', 'dialog');
+  ov.setAttribute('aria-modal', 'true');
+  ov.setAttribute('aria-label', 'Welcome to Paisaidee');
+  ov.innerHTML = `
+    <div class="mi-viewport" data-mi-viewport>
+      ${WELCOME_SLIDES.map((s, i) => welcomeSlideHtml(s, i)).join('')}
+      ${moodSlideHtml}
     </div>
     <button type="button" class="mi-skip" data-mi-skip>Skip</button>
     <div class="mi-controls">
-      <button type="button" class="mi-next${startIndex === moodIndex ? ' mi-hidden' : ''}" data-mi-next aria-label="Next">›</button>
+      ${miDotsHtml(totalSlides, startIndex)}
+      <div class="mi-actions">
+        <button type="button" class="mi-btn mi-btn-2nd" data-mi-later hidden>Not now</button>
+        <button type="button" class="mi-btn mi-btn-go" data-mi-next>Next</button>
+      </div>
     </div>`;
   document.body.appendChild(ov);
 
@@ -4338,24 +4432,86 @@ function showMoodIntro({ startAtMood = false } = {}) {
   const viewport = ov.querySelector('[data-mi-viewport]');
   const dots = [...ov.querySelectorAll('.mi-dot')];
   const nextBtn = ov.querySelector('[data-mi-next]');
-  const typeStep = ov.querySelector('[data-ms-step="type"]');
-  const moodStep = ov.querySelector('[data-ms-step="mood"]');
-  const typeCardsEl = typeStep.querySelector('.vibe-cards');
-  const moodCardsEl = moodStep.querySelector('[data-ms-mood-cards]');
-  const moodTitleEl = moodStep.querySelector('[data-ms-mood-title]');
-  const moodSubEl = moodStep.querySelector('[data-ms-mood-sub]');
+  const laterBtn = ov.querySelector('[data-mi-later]');
+  const actions = ov.querySelector('.mi-actions');
+  const locBox = ov.querySelector('[data-mi-loc]');
 
-  // the mood slide's two steps live inside that one slide, stacked in a
-  // single grid cell and swapped by class — NOT as a fifth .mi-slide. See
-  // the .ms-steps comment in style.css for why (a fifth child of a
-  // scroll-snap viewport is a page anyone can swipe to before choosing).
-  // dir: 'forward' slides the incoming step in from the right, 'back' from
-  // the left, null swaps silently (used when the slide scrolls out of view
-  // and resets itself). Only a dir'd swap replays the card stagger; a
-  // silent reset happens off-screen, and re-entry is the scroll listener's
-  // job below.
-  const activeCards = () => (moodStep.classList.contains('on') ? moodCardsEl : typeCardsEl);
+  const currentIndex = () => Math.round(viewport.scrollLeft / viewport.clientWidth);
+  const goTo = (i) => viewport.scrollTo({ left: i * viewport.clientWidth, behavior: reduced ? 'auto' : 'smooth' });
+
+  // location page state: 'idle' | 'asking' | 'on' | 'blocked' | 'failed'
+  let locState = state.userPos ? 'on' : 'idle';
+  const LOC_COPY = {
+    on: '<span class="mi-loc-ok">✓</span> Location is on — places are sorted by distance.',
+    blocked: 'Location is blocked for this site. You can allow it later in your browser settings — everything else still works.',
+    failed: 'Couldn’t get a fix just now. You can try again any time from “near me”.',
+  };
+  const renderLoc = () => {
+    if (!locBox) return;
+    locBox.innerHTML = LOC_COPY[locState] || '';
+    locBox.classList.toggle('on', locState === 'on');
+  };
+
+  // the bottom bar follows the page it is on
+  const syncControls = (idx) => {
+    dots.forEach(d => d.classList.toggle('on', Number(d.dataset.miDot) === idx));
+    const onMood = idx === moodIndex;
+    actions.classList.toggle('mi-hidden', onMood);
+    const asking = idx === nearIndex && (locState === 'idle' || locState === 'asking');
+    laterBtn.hidden = !asking;
+    nextBtn.disabled = locState === 'asking' && idx === nearIndex;
+    nextBtn.textContent = asking
+      ? (locState === 'asking' ? 'Finding you…' : 'Use my location')
+      : (idx === lastIndex ? 'Let’s go' : 'Next');
+  };
+
+  // permission already granted (a returning browser, or a second device):
+  // take the fix quietly so the page can say "on" instead of asking again.
+  // Never triggers the browser prompt — that only happens on a tap.
+  if (!state.userPos && nearIndex >= 0 && navigator.permissions && hasGeolocation()) {
+    navigator.permissions.query({ name: 'geolocation' }).then(p => {
+      if (p.state === 'granted') {
+        requestLocation().then(pos => { if (pos) { locState = 'on'; renderLoc(); syncControls(currentIndex()); } });
+      } else if (p.state === 'denied') {
+        locState = 'blocked'; renderLoc(); syncControls(currentIndex());
+      }
+    }).catch(() => {});
+  }
+  renderLoc();
+
+  let gotLocation = false;
+  const askLocation = async () => {
+    locState = 'asking'; syncControls(nearIndex);
+    state.geoError = null;
+    const pos = await requestLocation();
+    if (pos) {
+      locState = 'on'; gotLocation = true;
+    } else {
+      locState = state.geoError === 'blocked' ? 'blocked' : 'failed';
+    }
+    renderLoc();
+    syncControls(currentIndex());
+    // a granted fix moves on by itself after a beat, so the tick is seen
+    if (pos && currentIndex() === nearIndex) setTimeout(() => { if (currentIndex() === nearIndex) goTo(nearIndex + 1); }, reduced ? 0 : 700);
+  };
+
+  // mood page wiring (only when it exists)
+  let typeStep = null, moodStep = null, typeCardsEl = null, moodCardsEl = null, moodTitleEl = null, moodSubEl = null;
+  if (hasMood) {
+    typeStep = ov.querySelector('[data-ms-step="type"]');
+    moodStep = ov.querySelector('[data-ms-step="mood"]');
+    typeCardsEl = typeStep.querySelector('.vibe-cards');
+    moodCardsEl = moodStep.querySelector('[data-ms-mood-cards]');
+    moodTitleEl = moodStep.querySelector('[data-ms-mood-title]');
+    moodSubEl = moodStep.querySelector('[data-ms-mood-sub]');
+  }
+  const activeCards = () => (moodStep?.classList.contains('on') ? moodCardsEl : typeCardsEl);
+  // the mood page's two steps live in one grid cell and swap by class — see
+  // the .ms-steps comment in style.css. dir: 'forward' slides in from the
+  // right, 'back' from the left, null swaps silently (used when the page
+  // has scrolled out of view and resets itself).
   const showStep = (name, dir) => {
+    if (!hasMood) return;
     const enter = name === 'mood' ? moodStep : typeStep;
     const leave = name === 'mood' ? typeStep : moodStep;
     leave.classList.remove('on', 'ms-from-right', 'ms-from-left');
@@ -4367,114 +4523,83 @@ function showMoodIntro({ startAtMood = false } = {}) {
     }
   };
 
-  // the cards' one-time entry animation (see .mc-enter in style.css) —
-  // triggered here rather than unconditionally on mount, since on a fresh
-  // open (startAtMood:false) the mood slide isn't the visible one yet; the
-  // scroll listener below re-triggers it (restartAnim(), since adding a
-  // class that's already present doesn't restart a CSS animation on its
-  // own) each time the mood slide actually comes into view, swipe or
-  // chevron alike — "on entry", not "only the very first time ever". Slide
-  // 4 always opens on step 1, so it's the type cards that stagger in here;
-  // step 2's own four cards get the same treatment when it's shown.
   let wasOnMood = startIndex === moodIndex;
   if (wasOnMood) typeCardsEl.classList.add('mc-enter');
   if (startIndex > 0) viewport.scrollLeft = startIndex * viewport.clientWidth;
-  // scroll-snap does the paging itself (native touch handling — no manual
-  // touchmove math, so there's no inline transform this needs to clean up
-  // on touchcancel, unlike the drag-to-dismiss below in openVibePop()); this
-  // listener keeps the dots AND the forward chevron (hidden once the mood
-  // slide is reached — there's no "next" from the last slide) in sync with
-  // wherever the scroll lands.
+  // the page each slide's own entrance animation keys off (.mi-slide.in)
+  const markIn = (idx) => ov.querySelectorAll('.mi-slide').forEach(s =>
+    s.classList.toggle('in', Number(s.dataset.miIndex) === idx));
+  markIn(startIndex);
+  syncControls(startIndex);
+
   let dotRaf = null;
   viewport.addEventListener('scroll', () => {
     if (dotRaf) return;
     dotRaf = requestAnimationFrame(() => {
       dotRaf = null;
-      const idx = Math.round(viewport.scrollLeft / viewport.clientWidth);
-      // every welcome panel carries its own full row (see miDotsHtml), so
-      // this walks 3 rows x totalSlides dots and matches on the dot's own
-      // page index — a positional `i === idx` would light up the wrong
-      // dot in every row but the first
-      dots.forEach(d => d.classList.toggle('on', Number(d.dataset.miDot) === idx));
-      nextBtn.classList.toggle('mi-hidden', idx === moodIndex);
+      const idx = currentIndex();
+      syncControls(idx);
+      markIn(idx);
       const onMood = idx === moodIndex;
       if (onMood && !wasOnMood) restartAnim(activeCards(), 'mc-enter');
-      // swiping back off the slide resets it to step 1: returning to a
-      // half-finished two-step flow reads as broken, and it keeps "which
-      // grid animates on re-entry" unambiguous. Silent (no dir) — this
-      // happens with the slide already scrolled out of view.
+      // swiping back off the mood page resets it to step 1, silently
       if (!onMood && wasOnMood) showStep('type', null);
       wasOnMood = onMood;
     });
   }, { passive: true });
 
-  // the only forward affordance besides swiping itself
-  nextBtn.addEventListener('click', () => {
-    const idx = Math.round(viewport.scrollLeft / viewport.clientWidth);
-    viewport.scrollTo({ left: (idx + 1) * viewport.clientWidth, behavior: reduced ? 'auto' : 'smooth' });
-  });
-
-  // .show/.hide run CSS *animations* (see the CSS), not transitions. A
-  // transition needs the browser to snapshot the pre-change computed value
-  // as its start point in one style pass, then diff it against the
-  // post-change value in a later pass — if those two passes get coalesced
-  // (a real risk right after an appendChild this heavy: 3 preloaded photos
-  // + 4 more card images), the "before" snapshot can already be partway
-  // to the "after" value, and the transition starts from there instead of
-  // from true opacity:0 and gets stuck (observed, twice: 0.136, then 0.073
-  // with the carousel added — a double rAF here to force the two passes
-  // apart didn't survive the carousel making that recalc heavier still). A
-  // fill-mode:forwards animation doesn't diff against a prior snapshot at
-  // all — its 0% state is the element's own non-animated base style
-  // (opacity:0 on .mood-intro), authoritative from the instant the
-  // animation starts, so there's nothing an interrupted recalc can corrupt.
-  // No rAF needed: adding the class synchronously is enough.
   ov.classList.add('show');
 
-  // the illustrations come in a night set and a daytime set (WELCOME_SLIDES),
-  // and only the current theme's three were preloaded — so if the theme
-  // changes while the carousel is open, swap the <img> src and let the other
-  // set load then. A brief pop-in on three images is the accepted cost of
-  // not preloading six (see preloadWelcomeSlides()).
-  //
-  // Watches the data-theme attribute rather than hooking into applyTheme():
-  // the theme moves on the toggle AND on the 60s interval that re-resolves
-  // 'auto' at dusk (see bindTheme()), so reacting to the attribute itself
-  // means no present or future path that sets it has to remember the intro
-  // exists. Observer callbacks are delivered at the microtask checkpoint
-  // after the setter's task finishes, so applyTheme() has always assigned
-  // state.theme — which welcomePhoto() reads — by the time this runs.
+  // the illustrations come in a night set and a daytime set — if the theme
+  // changes while the flow is open (the toggle, or the 60s interval that
+  // re-resolves 'auto' at dusk), swap the <img> src. Watches the attribute
+  // so no path that sets the theme has to remember the intro exists.
   const themeObserver = new MutationObserver(() => {
     WELCOME_SLIDES.forEach((s, i) => {
       const img = ov.querySelector(`.mi-slide[data-mi-index="${i}"] .mi-illus img`);
-      if (!img) return;
-      const src = cloudinaryUrl(welcomePhoto(s), 800);
+      const photo = welcomePhoto(s);
+      if (!img || !photo) return;
+      const src = cloudinaryUrl(photo, 800);
       if (img.getAttribute('src') !== src) img.setAttribute('src', src);
     });
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+  const keydown = (e) => {
+    if (e.key === 'ArrowRight') goTo(Math.min(lastIndex, currentIndex() + 1));
+    else if (e.key === 'ArrowLeft') goTo(Math.max(0, currentIndex() - 1));
+  };
+  document.addEventListener('keydown', keydown);
+
   const dismiss = () => {
-    // before the fade, not after: the overlay lingers ~280ms and the 60s
-    // theme interval can fire inside that window, which would otherwise
-    // swap all three illustrations out mid-fade
     themeObserver.disconnect();
+    document.removeEventListener('keydown', keydown);
     ov.classList.remove('show');
     ov.classList.add('hide');
     setTimeout(() => ov.remove(), reduced ? 0 : 280);
+    // a fix taken during the flow re-sorts Home by distance underneath
+    if (gotLocation && state.screen === 'home' && state.sheetView?.type !== 'venue') renderHomeSheet();
   };
+  const finish = () => { markMoodIntroSeen(); dismiss(); };
+
+  nextBtn.addEventListener('click', () => {
+    const idx = currentIndex();
+    if (idx === nearIndex && locState === 'idle') { askLocation(); return; }
+    if (idx >= lastIndex) { logMoodPick('dismissed'); finish(); return; }
+    goTo(idx + 1);
+  });
+  laterBtn.addEventListener('click', () => goTo(nearIndex + 1));
+
+  ov.querySelectorAll('[data-mood-intro-skip], [data-mi-skip]').forEach(el => el.addEventListener('click', () => {
+    logMoodPick('dismissed');
+    finish();
+  }));
+
+  if (!hasMood) return;
+
   // step 2's grid is built for whichever type was picked, and pre-built at
-  // mount for the first type that has one. Pre-building matters for
-  // layout, not speed: both steps share one grid cell so the slide settles
-  // to a single height (see .ms-steps), and an empty step 2 would let that
-  // height — and so the vertically-centred brand mark and heading above it
-  // — jump the first time somebody tapped a type.
-  //
-  // A type with moods gets the four mood cards; one without (MOOD_TYPES
-  // moods:false — Bars today) gets the editorial lists instead, in the
-  // .ms-type-cards layout step 1 already uses for its own two cards. Both
-  // are the same .vibe-card shell and both open the same results popup, so
-  // everything below this line is shared.
+  // mount for the first type that has one, so both steps settle to a single
+  // shared height (see .ms-steps) and the heading above can't jump.
   let moodType = null;
   const fillMoodStep = (t) => {
     if (moodType === t.key) return;
@@ -4486,16 +4611,9 @@ function showMoodIntro({ startAtMood = false } = {}) {
     moodCardsEl.innerHTML = t.moods
       ? VIBE_TAGS.map(tag => vibeCardHtml(tag, state.venues.filter(v => v.type === t.key))).join('')
       : typeListsFor(t.key).map(x => listCardHtml(x.def, x.venues)).join('');
-    // bound here rather than once at mount: these cards don't exist until
-    // this runs, and they're replaced wholesale whenever the type changes.
-    // One binding for both kinds of card — the key is a vibe tag or a
-    // TYPE_LISTS key, and openVibePop() resolves either.
     moodCardsEl.querySelectorAll('[data-vibe-tag], [data-list-key]').forEach(el => {
       const key = el.dataset.vibeTag || el.dataset.listKey;
       el.addEventListener('click', () => {
-        // list keys are logged with a prefix, same convention as the type
-        // step's `type:` above, so mood_stats can tell a list tap from a
-        // mood tap without knowing today's vocabulary
         logMoodPick(el.dataset.listKey ? `list:${key}` : key);
         markMoodIntroSeen();
         dismiss();
@@ -4504,16 +4622,11 @@ function showMoodIntro({ startAtMood = false } = {}) {
     });
   };
 
-  // true when this type has a step 2 worth showing at all: four moods, or
-  // at least one non-empty editorial list
   const hasStepTwo = (t) => t.moods || typeListsFor(t.key).length > 0;
 
   const pickType = (t) => {
     logMoodPick(`type:${t.key}`);
     if (!hasStepTwo(t)) {
-      // no vibe vocabulary and nothing in either list — there is no second
-      // step worth showing. Close the intro and hand the person that type's
-      // own list instead of a screen of dead cards.
       markMoodIntroSeen();
       openTypeList(t.key);
       dismiss();
@@ -4523,10 +4636,6 @@ function showMoodIntro({ startAtMood = false } = {}) {
     showStep('mood', 'forward');
   };
 
-  // returns to step 1 and nothing else — the ways out of the intro itself
-  // are Skip (the pill pinned to the top-right corner of the overlay, on
-  // every slide including this one) and "Just show me around" on step 1,
-  // both wired below
   ov.querySelector('[data-ms-back]').addEventListener('click', () => showStep('type', 'back'));
   typeCardsEl.querySelectorAll('[data-mood-type]').forEach(el => {
     const t = MOOD_TYPES.find(x => x.key === el.dataset.moodType);
@@ -4534,11 +4643,6 @@ function showMoodIntro({ startAtMood = false } = {}) {
   });
   const firstWithStepTwo = MOOD_TYPES.find(hasStepTwo);
   if (firstWithStepTwo) fillMoodStep(firstWithStepTwo);
-  ov.querySelectorAll('[data-mood-intro-skip], [data-mi-skip]').forEach(el => el.addEventListener('click', () => {
-    logMoodPick('dismissed');
-    markMoodIntroSeen();
-    dismiss();
-  }));
 }
 
 // quiet route back to the mood chooser once it's been dismissed for good —
@@ -5037,22 +5141,63 @@ function typeHeroHeaderHtml(f) {
 // photo tiles from the previous change, which came from the mockup's
 // Explore screen (2), not Home (1). Neutral discs, not the mockup's four
 // colours: coral stays the one accent, and it marks actions, not categories.
-const CATEGORY_GLYPHS = {
-  ...TILE_GLYPHS,
-  event: '<rect x="4" y="5.5" width="16" height="14.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+// Home category icons (homeCategoriesHtml()): 48-unit line drawings in the
+// current text colour with ONE coral accent shape each — the coral is the
+// only saturated colour these may carry (colour-restraint rule), and it
+// always marks the "good part": the drink, the crema, the broth, the star.
+// Stroke 2.6 so they hold at the 30px they render at; no detail finer than
+// that. Kept separate from TILE_GLYPHS (the generated venue tile glyphs),
+// which stay solid fills because they are drawn small on a coloured tile.
+const CAT_ICONS = {
+  bar: `
+    <path class="ci-acc" d="M13.5 13h21L24 25.5z"/>
+    <path d="M9 9h30L24 27z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M24 27v12M16.5 39.5h15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M31 4.5 27 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="32" cy="4.6" r="2.6" fill="currentColor"/>`,
+  cafe: `
+    <ellipse class="ci-acc" cx="21" cy="21.5" rx="11" ry="2.6"/>
+    <path d="M9 19h24v9a10 10 0 0 1-10 10h-4a10 10 0 0 1-10-10z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M33 22.5h2.5a4.5 4.5 0 0 1 0 9H32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M6 42.5h30" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M16 13c-2-2.2 2-3.8 0-6.5M24 13c-2-2.2 2-3.8 0-6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
+  restaurant: `
+    <path class="ci-acc" d="M8.5 24h31a15.5 15.5 0 0 1-31 0z"/>
+    <path d="M6 24h36M8.5 24a15.5 15.5 0 0 0 31 0" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M18 39.5h12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M29 20 38 5M33.5 20.5 41 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M14 17c-1.6-2 1.6-3.4 0-5.8M21 17c-1.6-2 1.6-3.4 0-5.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
+  event: `
+    <path d="M7 14a3 3 0 0 1 3-3h28a3 3 0 0 1 3 3v5a5 5 0 0 0 0 10v5a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3v-5a5 5 0 0 0 0-10z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M30 13v22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.5 3" stroke-linecap="round"/>
+    <path class="ci-acc" d="m19 16.5 2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/>`,
+  wheel: `
+    <path class="ci-acc" d="M24 25V9.5A15.5 15.5 0 0 1 39.5 25zM24 25v15.5A15.5 15.5 0 0 1 8.5 25z"/>
+    <circle cx="24" cy="25" r="15.5" fill="none" stroke="currentColor" stroke-width="2.6"/>
+    <path d="M24 9.5v31M8.5 25h31" fill="none" stroke="currentColor" stroke-width="2"/>
+    <circle cx="24" cy="25" r="3.2" fill="currentColor"/>
+    <path d="M19.5 3.5h9L24 9.5z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>`,
 };
+
+// one rounded tile per filter the chip row offers (Bars, Cafes, Events,
+// Restaurants once any exist), then the wheel. The wheel tile spins every
+// open bar, café and restaurant (see wheelCandidates('all')) — it is also
+// the only way into the wheel from the All tab and on desktop, where the
+// type-list Spin button is hidden.
+// TODO(lao): 'ສຸ່ມເລືອກ' for the wheel tile.
 function homeCategoriesHtml() {
   const keys = FILTER_ORDER.filter(k => k !== 'all' && !chipBarEl.querySelector(`.chip[data-filter="${k}"]`)?.hidden);
   const label = k => k === 'event'
     ? { lo: 'ອີເວັນ', en: 'Events' }
     : { lo: VENUE_TYPE_META[k].label_lo, en: VENUE_TYPE_META[k].label };
+  const tile = (attrs, icon, lo, en) => `<button type="button" class="home-cat" ${attrs}>
+        <span class="home-cat-disc"><svg viewBox="0 0 48 48" aria-hidden="true">${icon}</svg></span>
+        <span class="home-cat-lo lao">${esc(lo)}</span><span class="home-cat-en">${esc(en)}</span>
+      </button>`;
   return `<div class="home-cats">${keys.map(k => {
     const l = label(k);
-    return `<button type="button" class="home-cat" data-cat="${k}">
-        <span class="home-cat-disc"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${CATEGORY_GLYPHS[k] || CATEGORY_GLYPHS.venue}</svg></span>
-        <span class="home-cat-lo lao">${esc(l.lo)}</span><span class="home-cat-en">${esc(l.en)}</span>
-      </button>`;
-  }).join('')}</div>`;
+    return tile(`data-cat="${k}"`, CAT_ICONS[k] || CAT_ICONS.event, l.lo, l.en);
+  }).join('')}${tile('data-wheel aria-label="Spin the wheel"', CAT_ICONS.wheel, 'ສຸ່ມເລືອກ', 'Spin')}</div>`;
 }
 
 // On fire's carousel card, to the mockup's shape: photo on top, then name and
@@ -6048,11 +6193,6 @@ function openVenue(id) {
 
   html += `
     <div class="vd-details">${detail.join('')}</div>
-    <div class="section-h">Comments</div>
-    <div class="comment-empty">
-      No comments yet.<br>
-      Comments aren't open yet — they're coming.
-    </div>
     ${v.verified ? '' : '<div class="hint">details unconfirmed — hours may differ</div>'}
     <div id="routeAttribution"></div>`;
 

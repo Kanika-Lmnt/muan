@@ -1,0 +1,9 @@
+# Security headers for every static response (Cloudflare Pages _headers).
+# No Content-Security-Policy yet: the page runs inline boot scripts and
+# loads from unpkg, Google Fonts, Google Sign-In, CARTO and Cloudinary, so a
+# CSP needs testing on a real phone first — a wrong one blanks the app.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=(), usb=()

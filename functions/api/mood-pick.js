@@ -1,5 +1,6 @@
 import { getSessionUser } from './_auth.js';
 import { VIBE_TAGS, VENUE_TYPES } from './_venue-validation.js';
+import { rateLimit } from './_ratelimit.js';
 
 /* This endpoint takes no sign-in (a first-time visitor's intro taps are the
    point of it), so anything accepted is a row anyone can write, forever,
@@ -31,6 +32,9 @@ export async function onRequest(context) {
   if (context.request.method !== 'POST') {
     return Response.json({ ok: false, error: 'method not allowed' }, { status: 405 });
   }
+  // anonymous D1 write — cap it per IP (see _ratelimit.js)
+  const limited = await rateLimit(context, 'mood-pick', 30, 60);
+  if (limited) return limited;
 
   try {
     const body = await context.request.json().catch(() => null);

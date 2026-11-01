@@ -1,4 +1,5 @@
 import { getSessionUser } from './_auth.js';
+import { rateLimit } from './_ratelimit.js';
 
 // POST /api/upload-signature — issues a signed Cloudinary upload, scoped to
 // either one venue's own folder (default) or the signed-in user's own
@@ -46,6 +47,8 @@ export async function onRequest(context) {
   if (context.request.method !== 'POST') {
     return Response.json({ ok: false, error: 'method not allowed' }, { status: 405 });
   }
+  const limited = await rateLimit(context, 'upload-sig', 40, 60);
+  if (limited) return limited;
 
   try {
     const user = await getSessionUser(context);

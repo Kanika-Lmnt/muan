@@ -18,7 +18,7 @@ export async function onRequest(context) {
       'SELECT COUNT(DISTINCT venue_id) AS c FROM checkins WHERE user_id=?'
     ).bind(user.id).first();
     const venueCountRows = await db.prepare(
-      'SELECT venue_id, COUNT(*) AS c FROM checkins WHERE user_id=? GROUP BY venue_id'
+      'SELECT venue_id, COUNT(*) AS c, MAX(created_at) AS last FROM checkins WHERE user_id=? GROUP BY venue_id'
     ).bind(user.id).all();
     const total = await db.prepare(
       'SELECT COUNT(*) AS c FROM checkins WHERE user_id=?'
@@ -30,11 +30,26 @@ export async function onRequest(context) {
        WHERE ub.user_id = ? ORDER BY ub.earned_at`
     ).bind(user.id).all();
 
-    const cfg = await db.prepare("SELECT value FROM config WHERE key='phai_thresholds'").first();
-    const thresholds = JSON.parse(cfg?.value || '[0,100,400,1200,3000]');
+    // every badge, earned or not, so the You screen can show what is still
+    // to earn and how (the rule text) — a goal you can see is one you can
+    // work towards
+    const allBadges = await db.prepare(
+      'SELECT code AS id, name, name_lo, icon, rule AS description FROM badges ORDER BY rowid'
+    ).all();
+
+    const cfgRows = await db.prepare(
+      "SELECT key, value FROM config WHERE key IN ('phai_thresholds','ember_new_venue','ember_repeat')"
+    ).all();
+    const cfgMap = Object.fromEntries(cfgRows.results.map(r => [r.key, r.value]));
+    const thresholds = JSON.parse(cfgMap.phai_thresholds || '[0,100,400,1200,3000]');
     const stages = ['ember','flicker','flame','blaze','naga'];
     let stage = 'ember';
+    let nextStage = null, nextStageAt = null;
     thresholds.forEach((t,i) => { if (user.embers_total >= t) stage = stages[i]; });
+    const si = stages.indexOf(stage);
+    if (si + 1 < stages.length && thresholds[si + 1] !== undefined) {
+      nextStage = stages[si + 1]; nextStageAt = thresholds[si + 1];
+    }
 
     const { heat, heat_level } = await computeHeat(db, user.id);
 
@@ -63,6 +78,16 @@ export async function onRequest(context) {
       heat_level,
       checkin_days: days.results.map(r => r.d),
       venue_counts: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.c])),
+      // last check-in per venue (ISO) — "your places" on the You screen
+      venue_last: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.last])),
+      stage_floor: thresholds[si] ?? 0,
+      next_stage: nextStage,
+      next_stage_at: nextStageAt,
+      // the real per-check-in values from config, so the screen's "new
+      // places earn more" line can never drift from what checkin.js pays
+      ember_new_venue: Number(cfgMap.ember_new_venue ?? 25),
+      ember_repeat: Number(cfgMap.ember_repeat ?? 5),
+      all_badges: allBadges.results,
       venues_explored: venues?.c || 0,
       total_checkins: total?.c || 0,
       badges: badgeRows.results,

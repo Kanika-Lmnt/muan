@@ -105,6 +105,7 @@ const state = {
   distanceFilterM: null,  // null (Any) | 500 | 1000 | 3000 | 5000 — see withinDistance()
   homeQuery: '',          // the Discover search box — see wireHomeSearch()
   ownPending: [],         // this owner's own pending submissions — see publicVenues()
+  openOnly: false,        // the "Open now" toggle on type lists and All places — see openToggleHtml()
   screen: 'home',           // mobile only: 'home' | 'map' | 'you' — see setMobileScreen()
   screenBeforeVenue: null,  // mobile only: screen to return to when the open venue closes
   venuePushed: false,       // mobile only: whether openVenue() pushed a history entry for the open venue
@@ -1596,9 +1597,11 @@ async function openFlameSheet() {
         <div class="fl-sub">Sign in to check in, keep streaks and earn embers</div>
         <div id="gsi-btn" style="display:flex;justify-content:center;margin:18px 0;"></div>
         <div id="gsi-err" class="hint" style="text-align:center;margin:-6px 0 10px;" hidden></div>
+        ${savedCardHtml()}
         <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       </div>
     `);
+    bindSavedCard(document.getElementById('sheetInner'));
     const sheet = document.getElementById('sheet');
     if (sheet) sheet.scrollTop = 0;
     pauseFlameIfReducedMotion();
@@ -1793,14 +1796,24 @@ function identityCardHtml(me, avatarIndex, items) {
           : `<button class="fl-avatar-link" data-open-avatar>Change avatar</button>`}
       </div>
 
-      ${me.badges?.length ? `
-      <div class="fl-collect-h">Badges</div>
+      ${(() => {
+        // earned first, then the ones still to earn — dimmed, with the rule
+        // under the name, so every badge is a visible goal rather than a
+        // surprise (older /api/me without all_badges: earned only)
+        const earned = new Set((me.badges || []).map(b => b.id));
+        const all = me.all_badges?.length ? me.all_badges : (me.badges || []);
+        const list = [...all.filter(b => earned.has(b.id)), ...all.filter(b => !earned.has(b.id))];
+        if (!list.length) return '';
+        return `
+      <div class="fl-collect-h">Badges · ${earned.size} of ${all.length}</div>
       <div class="fl-badges">
-        ${me.badges.map(b => `<div class="fl-badge" title="${esc(b.description||'')}">
+        ${list.map(b => `<div class="fl-badge${earned.has(b.id) ? '' : ' locked'}" title="${esc(b.description || '')}">
            <span class="fl-badge-ico">${badgeIcon(b, 20)}</span>
            <span class="fl-badge-name">${esc(b.name)}</span>
+           ${earned.has(b.id) ? '' : `<span class="fl-badge-rule">${esc(b.description || '')}</span>`}
          </div>`).join('')}
-      </div>` : ''}
+      </div>`;
+      })()}
 
       <div class="fl-collect-h">Avatar items</div>
       <div class="fl-items-row">
@@ -1813,6 +1826,173 @@ function identityCardHtml(me, avatarIndex, items) {
           </div>`).join('')}
       </div>
     </div>`;
+}
+
+/* ---------- You screen: the parts that make it yours ----------
+   Built from what the research says keeps people coming back to a check-in
+   app without spoiling it (Foursquare's mayorships ended up rewarding fake
+   check-ins at closed venues; Swarm's coins read as "blingy"; Duolingo's
+   streaks work when the bar is low and a miss isn't a failure):
+     - the record is the reward: where you've actually been, how often, and
+       when — a personal map of the city, not a score against strangers
+     - always show the NEXT thing within reach, with how far there is to go
+       (people speed up as a goal gets close)
+     - say plainly what pays most — a new place earns more than a repeat —
+       so the game pushes discovery, which is the whole point of the app
+     - no public leaderboard: competing with strangers is what made
+       Foursquare's data go bad
+   Every number on these cards comes from /api/me or the venue list. */
+
+function shortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('en-GB', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function goalBarHtml(p) {
+  const pct = Math.max(4, Math.min(100, Math.round(p * 100)));
+  return `<div class="fl-bar" role="presentation"><span style="width:${pct}%"></span></div>`;
+}
+
+// "Next up": the nearest two or three things to earn
+function nextUpHtml(me, items, stageLabels, stageLo) {
+  const goals = [];
+  if (me.next_stage && me.next_stage_at != null) {
+    const floor = me.stage_floor || 0;
+    const left = Math.max(0, me.next_stage_at - me.embers_total);
+    const per = me.ember_new_venue || 25;
+    const places = Math.max(1, Math.ceil(left / per));
+    goals.push({
+      ico: mascotHtml('idle', 'fl-goal-phai'),
+      title: `Phai becomes ${esc(stageLabels[me.next_stage])} · <span class="lao">${esc(stageLo[me.next_stage])}</span>`,
+      sub: `${left} embers to go — about ${plural(places, 'new place', 'new places')}`,
+      p: (me.embers_total - floor) / Math.max(1, me.next_stage_at - floor),
+    });
+  }
+  const nextItem = items.filter(it => !it.earned)
+    .sort((a, b) => (a.need - a.have) - (b.need - b.have))[0];
+  if (nextItem) {
+    const left = nextItem.need - nextItem.have;
+    goals.push({
+      ico: `<span class="fl-goal-ico">${itemIconSVG(nextItem.id, 20)}</span>`,
+      title: esc(nextItem.name),
+      sub: `${left} more ${esc(nextItem.where)} to unlock it for your avatar`,
+      p: nextItem.have / nextItem.need,
+    });
+  }
+  // the one badge whose progress can be counted from what /api/me returns
+  const has = new Set((me.badges || []).map(b => b.id));
+  if (!has.has('explorer')) {
+    const n = me.venues_explored || 0;
+    goals.push({
+      ico: `<span class="fl-goal-ico">${badgeIcon({ id: 'explorer' }, 20)}</span>`,
+      title: 'Explorer badge',
+      sub: `${10 - Math.min(10, n)} more different places`,
+      p: n / 10,
+    });
+  } else if (!has.has('regular')) {
+    const best = Math.max(0, ...Object.values(me.venue_counts || {}));
+    goals.push({
+      ico: `<span class="fl-goal-ico">${badgeIcon({ id: 'regular' }, 20)}</span>`,
+      title: 'Regular badge',
+      sub: `${Math.max(0, 5 - best)} more visits to your favourite place`,
+      p: best / 5,
+    });
+  }
+  if (!goals.length) return '';
+  return `
+    <div class="fl-card fl-card-goals">
+      <div class="fl-card-h">Next up</div>
+      ${goals.slice(0, 3).map(g => `
+        <div class="fl-goal">
+          ${g.ico}
+          <div class="fl-goal-body">
+            <div class="fl-goal-title">${g.title}</div>
+            ${goalBarHtml(g.p)}
+            <div class="fl-goal-sub">${g.sub}</div>
+          </div>
+        </div>`).join('')}
+      <div class="fl-goal-tip">A place you've never checked in at earns <b>${me.ember_new_venue || 25} embers</b>; going back earns ${me.ember_repeat || 5}.</div>
+    </div>`;
+}
+
+// "Your Vientiane": how much of the city you've found, and the places
+// themselves — most recent first, with how often and when
+function yourCityHtml(me) {
+  const counts = me.venue_counts || {};
+  const last = me.venue_last || {};
+  const live = state.venues.filter(v => v.pin_status !== 'pending');
+  const visited = live.filter(v => counts[v.id])
+    .sort((a, b) => String(last[b.id] || '').localeCompare(String(last[a.id] || '')));
+  const types = ['cafe', 'bar', 'restaurant', 'venue']
+    .map(t => ({ t, total: live.filter(v => v.type === t).length, got: visited.filter(v => v.type === t).length }))
+    .filter(x => x.total > 0);
+  const rows = visited.map(v => {
+    const n = counts[v.id];
+    const tag = n >= 5 ? 'your regular' : n >= 3 ? 'a favourite' : '';
+    const thumb = v.photos?.length
+      ? `<img src="${esc(cloudinaryUrl(v.photos[0], 120))}" alt="" loading="lazy">`
+      : `<img src="${venueTileUri(v.short_name || v.name, v.type, false)}" alt="" loading="lazy">`;
+    return `<button type="button" class="fl-place" data-open-venue="${esc(v.id)}">
+        <span class="fl-place-img">${thumb}</span>
+        <span class="fl-place-body">
+          <span class="fl-place-name">${esc(v.short_name || v.name)}${tag ? `<span class="fl-place-tag">${tag}</span>` : ''}</span>
+          <span class="fl-place-sub">${plural(n, 'visit', 'visits')}${last[v.id] ? ` · last ${esc(shortDate(last[v.id]))}` : ''}</span>
+        </span>
+        <span class="fl-place-chev" aria-hidden="true">›</span>
+      </button>`;
+  });
+  // TODO(lao): 'ວຽງຈັນຂອງເຈົ້າ' for "Your Vientiane"
+  return `
+    <div class="fl-card fl-card-city">
+      <div class="fl-card-h">Your Vientiane · <span class="lao">ວຽງຈັນຂອງເຈົ້າ</span></div>
+      <div class="fl-city-big"><b>${visited.length}</b> of ${live.length} places found</div>
+      ${goalBarHtml(live.length ? visited.length / live.length : 0)}
+      <div class="fl-city-types">${types.map(x =>
+        `<span class="fl-city-type"><b>${x.got}</b>/${x.total} ${esc((VENUE_TYPE_META[x.t]?.label || x.t).toLowerCase())}</span>`).join('')}</div>
+      ${rows.length
+        ? `<div class="fl-places">${rows.slice(0, 6).join('')}</div>
+           ${rows.length > 6 ? `<details class="fl-more"><summary>Show all ${rows.length}</summary><div class="fl-places">${rows.slice(6).join('')}</div></details>` : ''}`
+        : `<div class="fl-city-empty">Places you check in at collect here, with how often you go back.</div>`}
+    </div>`;
+}
+
+// the hearts, with a way to take one off
+function savedCardHtml() {
+  const list = savedVenues();
+  if (!list.length) return '';
+  return `
+    <div class="fl-card fl-card-saved" data-saved-card>
+      <div class="fl-card-h">Saved · <span class="lao">ບັນທຶກໄວ້</span></div>
+      <div class="fl-places">${list.map(v => {
+        const st = openStatus(v);
+        const thumb = v.photos?.length
+          ? `<img src="${esc(cloudinaryUrl(v.photos[0], 120))}" alt="" loading="lazy">`
+          : `<img src="${venueTileUri(v.short_name || v.name, v.type, false)}" alt="" loading="lazy">`;
+        return `<div class="fl-place" role="button" tabindex="0" data-open-venue="${esc(v.id)}">
+          <span class="fl-place-img">${thumb}</span>
+          <span class="fl-place-body">
+            <span class="fl-place-name">${esc(v.short_name || v.name)}</span>
+            <span class="fl-place-sub${st.open ? ' open' : ''}">${esc(st.label)}</span>
+          </span>
+          <button type="button" class="fl-unsave" data-unsave="${esc(v.id)}" aria-label="Remove from saved">${icoHeart(18, true)}</button>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+}
+
+function bindSavedCard(root) {
+  root.querySelectorAll('[data-unsave]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSaved(btn.dataset.unsave);
+    const row = btn.closest('.fl-place');
+    const card = btn.closest('[data-saved-card]');
+    row?.remove();
+    if (card && !card.querySelector('.fl-place')) card.remove();
+    showToast('Removed from saved');
+  }));
 }
 
 // the normal You screen — the flame (or an invitation in its place), the
@@ -1842,6 +2022,10 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
       ${inviting
         ? flameInviteHtml(flameHtml, me.total_checkins)
         : flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName)}
+
+      ${inviting ? '' : nextUpHtml(me, items, stageLabels, stageLo)}
+      ${yourCityHtml(me)}
+      ${savedCardHtml()}
 
       ${identityCardHtml(me, avatarIndex, items)}
 
@@ -1873,6 +2057,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.scrollTop = 0;
   pauseFlameIfReducedMotion();
+  bindSavedCard(document.getElementById('sheetInner'));
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
 
@@ -5373,6 +5558,25 @@ function withinDistance(v) {
   const d = distanceTo(v);
   return d != null && d <= state.distanceFilterM;
 }
+/* "Open now": one toggle that narrows a list to places open this minute,
+   for the person who just wants to go somewhere now. The count is how many
+   in this list are open, from the same openStatus() the badges use. Venues
+   with unconfirmed hours are not "open" here — the toggle only shows what
+   the app can actually vouch for. */
+function passesFilters(v) {
+  return withinDistance(v) && (!state.openOnly || openStatus(v).open);
+}
+function openToggleHtml(list) {
+  const n = list.filter(v => openStatus(v).open).length;
+  const on = state.openOnly;
+  return `<button type="button" class="open-toggle${on ? ' on' : ''}" data-open-only aria-pressed="${on}">
+    <span class="open-toggle-dot" aria-hidden="true"></span>Open now<span class="open-toggle-n">${n}</span></button>`;
+}
+function openOnlyEmptyHtml() {
+  return `<div class="sec-empty">${mascotHtml('looking-over', 'sec-empty-phai')}Nothing in this list is open right now. ` +
+    `<button type="button" class="sec-empty-action" data-open-only>Show everything</button></div>`;
+}
+
 function distanceRowHtml() {
   if (!state.userPos) return '';
   return `<div class="dist-row" role="group" aria-label="Distance">${DISTANCE_FILTERS.map(m => {
@@ -5541,25 +5745,27 @@ function renderHomeSheet() {
           <button class="seg-btn ${cafeTab === 'all' ? 'on' : ''}" data-cafe-tab="all" role="tab" aria-selected="${cafeTab === 'all'}">All cafés</button>
         </div>`;
     }
+    const typePool = state.venues.filter(v => v.type === f && withinDistance(v));
+    html += `<div class="filter-row">${openToggleHtml(typePool)}</div>`;
     html += distanceRowHtml();
 
     if (f === 'cafe' && cafeTab === 'recommended') {
       // cafés with enough photos for a collage card to be worth showing —
       // pending venues excluded, same as On fire/Busy spots above
       const cafeGallery = sortForDisplay(state.venues
-        .filter(v => v.type === 'cafe' && v.pin_status !== 'pending' && (v.photos?.length || 0) >= 2 && withinDistance(v))
+        .filter(v => v.type === 'cafe' && v.pin_status !== 'pending' && (v.photos?.length || 0) >= 2 && passesFilters(v))
         .sort((a, b) => (b.photos.length - a.photos.length) ||
           (a.short_name || a.name).localeCompare(b.short_name || b.name)));
       if (!cafeGallery.length) {
-        html += typeListEmptyHtml();
+        html += state.openOnly && !distanceFilterActive() ? openOnlyEmptyHtml() : typeListEmptyHtml();
       } else {
         html += cafeGallery.map(v => collageCardHtml(v)).join('');
       }
     } else {
-      const typeVenues = sortForDisplay(state.venues.filter(v => v.type === f && withinDistance(v))
+      const typeVenues = sortForDisplay(state.venues.filter(v => v.type === f && passesFilters(v))
         .sort((a, b) => (a.short_name || a.name).localeCompare(b.short_name || b.name)));
       if (!typeVenues.length) {
-        html += typeListEmptyHtml();
+        html += state.openOnly && !distanceFilterActive() ? openOnlyEmptyHtml() : typeListEmptyHtml();
       } else if (isMobile()) {
         html += typeVenues.map(v => rowCard(v)).join('');
       } else {
@@ -5788,8 +5994,11 @@ function renderHomeSheet() {
       .sort((a, b) => (a.short_name || a.name).localeCompare(b.short_name || b.name)));
     if (everyVenue.length) {
       rendered = true;
-      html += secH('All places · ທັງໝົດ', plural(everyVenue.length, 'place', 'places')) +
-        (mobile ? everyVenue.map(v => rowCard(v)).join('') : everyVenue.map(plainListCardHtml).join(''));
+      const shown = state.openOnly ? everyVenue.filter(v => openStatus(v).open) : everyVenue;
+      html += `<div id="allPlaces"></div>` + secH('All places · ທັງໝົດ', plural(shown.length, 'place', 'places')) +
+        `<div class="filter-row">${openToggleHtml(everyVenue).replace('data-open-only', 'data-open-only data-anchor="allPlaces"')}</div>` +
+        (!shown.length ? openOnlyEmptyHtml()
+          : mobile ? shown.map(v => rowCard(v)).join('') : shown.map(plainListCardHtml).join(''));
     }
   }
 
@@ -7124,6 +7333,18 @@ function setSheet(html) {
     el.addEventListener('click', () => showMoodIntro({ startAtMood: true })));
   inner.querySelectorAll('[data-wheel]').forEach(el =>
     el.addEventListener('click', () => openWheel({ filter: state.filter })));
+  inner.querySelectorAll('[data-open-only]').forEach(el =>
+    el.addEventListener('click', () => {
+      state.openOnly = !state.openOnly;
+      // re-render in place: the All places toggle sits far down Home, and a
+      // re-render that jumped back to the top would lose the list it changed
+      const sh = document.getElementById('sheet');
+      const y = sh ? sh.scrollTop : 0;
+      renderHomeSheet();
+      const anchor = el.dataset.anchor && document.getElementById(el.dataset.anchor);
+      if (sh && anchor) sh.scrollTop = anchor.offsetTop;
+      else if (sh) sh.scrollTop = y;
+    }));
   inner.querySelectorAll('[data-save]').forEach(el =>
     el.addEventListener('click', (e) => {
       e.stopPropagation();

@@ -137,3 +137,66 @@ they choose otherwise — it no longer flips to dark at 5 pm or follows the
 phone's dark-mode setting. The theme button cycles light → dark → auto,
 where auto is the old behaviour (dark 5 pm–6 am). A saved choice is kept.
 The browser bar colour (theme-color) and the PWA manifest follow cream.
+
+## 9. You page and rewards (fourth pass)
+
+### What the research says
+- Foursquare's mayorships were fun until competing with strangers made
+  people check in at closed and made-up places; the database the company
+  lived on went bad, and it split check-ins off into Swarm. Lesson: never
+  reward behaviour that can corrupt the venue data, and no stranger
+  leaderboards. (Paisaidee's GPS check, open-hours check and caps already
+  guard this — keep it that way.)
+- Swarm's later coins and stickers read as "blingy" and stopped meaning
+  anything after a few months. Lesson: rewards should mean something in
+  the real world or to the person, not be a currency for its own sake.
+- Duolingo: streaks work best with a low bar, and a missed day must not
+  feel like failure (freezes, repair). Paisaidee's MONTHLY streak is
+  already the low-bar version — keep it gentle.
+- Self-determination theory: people keep doing things that make them feel
+  capable, free to choose, and connected. Points and leaderboards lift
+  numbers short-term but can crowd out the real reason to use the app.
+
+### What changed on the You page
+- **Next up**: the two or three closest things to earn, each with a
+  progress bar and how far to go — Phai's next stage (in embers and in
+  "about N new places"), the nearest avatar item, and the next countable
+  badge. Plus one line saying what pays most: a new place earns 25
+  embers, a repeat 5 (read from config, so it can't drift).
+- **Your Vientiane · ວຽງຈັນຂອງເຈົ້າ** (TODO(lao)): "8 of 33 places
+  found" with a bar and per-type counts, then the places themselves —
+  most recent first, with visit count, last visit date, and a "favourite"
+  (3+) / "your regular" (5+) tag. This is the record that makes the page
+  yours.
+- **Saved** on You, with a heart to take a place off (signed out too).
+- **Badges** now show all five: earned ones, then the rest dimmed with the
+  rule for earning them ("Checked in after midnight").
+- /api/me returns venue_last, next_stage, next_stage_at, stage_floor,
+  ember_new_venue, ember_repeat and all_badges. No migration.
+
+### Next steps worth building (need a decision or data)
+1. **Real rewards from venues** (PHASE2 phase 5): e.g. "5 check-ins at
+   Tree Town → a free drink". The most motivating reward is a real one,
+   and it gives venues a reason to sign up. Needs a rewards table, an
+   owner screen to set one, and a redeem-at-the-counter flow.
+2. **Monthly recap card** ("Your October: 4 nights out, 2 new places,
+   most visited Tree Town") — shareable to stories; all from check-ins.
+3. **Friends** (PHASE2 slice D): seeing friends' recent places is the
+   strongest retention lever in the research (shared streaks +22%), but it
+   needs the privacy switches in PHASE2 §3 built at the same time.
+4. **Gentle streak repair**: if the monthly streak breaks, offer "one
+   check-in this week keeps it" rather than resetting silently.
+
+## 10. Open now filter
+An "Open now · 12" toggle above every type list and above All places
+narrows the list to places open right now (venues with unconfirmed hours
+never count as open). The number is how many in that list are open.
+
+## 11. Load size (measured, not changed)
+app.js is 399KB raw / 134KB gzipped; style.css 250KB / 80KB. About half of
+app.js is comments. Lazy-loading the intro and the wheel would save only
+~8KB gzipped, so it isn't worth the risk. The real fix is a build step that
+strips comments and minifies at deploy (app.js would drop to roughly
+60KB gzipped) — but "no build step" is a deliberate project rule, so that
+is Kar's call. The bigger download is maplibre-gl.js (~830KB from unpkg),
+which already loads async.

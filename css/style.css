@@ -4359,3 +4359,63 @@ textarea:focus-visible,
 
 /* "info updated 3 Oct" under the hours row (updatedLineHtml()) */
 .vd-updated { margin-top: 6px; font-size: 12px; color: var(--secondary); }
+
+/* ---------- You: Next up / Your Vientiane / Saved (see you-cards in app.js) ---------- */
+.fl-card-h { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--bone); margin-bottom: 12px; }
+.fl-bar { height: 8px; border-radius: 4px; background: var(--ink4); overflow: hidden; margin: 6px 0 4px; }
+.fl-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--flame); }
+.fl-goal { display: flex; gap: 12px; align-items: center; }
+.fl-goal + .fl-goal { margin-top: 14px; }
+.fl-goal-body { flex: 1; min-width: 0; }
+.fl-goal-title { font-size: 14px; font-weight: 700; color: var(--bone); }
+.fl-goal-sub { font-size: 12.5px; color: var(--secondary); }
+.fl-goal-ico {
+  flex: 0 0 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: var(--ink4); color: var(--gold);
+}
+.fl-goal-phai { flex: 0 0 40px; width: 40px; height: 48px; }
+.fl-goal-tip { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--ink4); font-size: 12.5px; line-height: 1.5; color: var(--secondary); }
+.fl-goal-tip b { color: var(--bone); }
+
+.fl-city-big { font-size: 15px; color: var(--secondary); }
+.fl-city-big b { font-size: 26px; color: var(--bone); margin-right: 2px; }
+.fl-city-types { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 12.5px; color: var(--secondary); }
+.fl-city-type b { color: var(--bone); }
+.fl-city-empty { margin-top: 14px; font-size: 13px; line-height: 1.5; color: var(--secondary); }
+.fl-places { display: flex; flex-direction: column; margin-top: 12px; }
+.fl-place {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 0;
+  border: none; background: none; text-align: left; cursor: pointer; font-family: var(--font); color: var(--bone);
+}
+.fl-place + .fl-place { border-top: 1px solid var(--ink4); }
+.fl-place-img { flex: 0 0 48px; height: 48px; border-radius: 12px; overflow: hidden; background: var(--ink4); }
+.fl-place-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fl-place-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fl-place-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-place-tag { margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: var(--gold); border: 1px solid currentColor; vertical-align: 1px; }
+.fl-place-sub { font-size: 12.5px; color: var(--secondary); }
+.fl-place-sub.open { color: var(--teal); font-weight: 600; }
+.fl-place-chev { color: var(--secondary); font-size: 18px; }
+.fl-unsave { flex: 0 0 40px; height: 40px; border: none; border-radius: 50%; background: none; color: var(--flame); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.fl-more { margin-top: 4px; }
+.fl-more > summary { list-style: none; cursor: pointer; padding: 10px 0 2px; font-size: 13px; font-weight: 600; color: var(--flame-text); }
+.fl-more > summary::-webkit-details-marker { display: none; }
+.fl-card-goals, .fl-card-city, .fl-card-saved { text-align: left; }
+.fl-wrap > .fl-card-saved { margin-top: 20px; }
+/* badges still to earn: dim, with the rule under the name */
+.fl-badge.locked { opacity: .55; }
+.fl-badge.locked .fl-badge-ico { color: var(--secondary); }
+.fl-badge-rule { display: block; max-width: 110px; margin-top: 2px; font-size: 10px; line-height: 1.3; color: var(--secondary); }
+
+/* "Open now" toggle (openToggleHtml()) — teal is the open-now colour */
+.filter-row { display: flex; margin: 10px 0 2px; }
+.open-toggle {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+  border-radius: 999px; border: 1px solid var(--ink4); background: var(--ink); color: var(--bone);
+  font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.open-toggle-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--teal); }
+.open-toggle-n { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--ink3); color: var(--secondary); font-size: 11.5px; text-align: center; }
+.open-toggle.on { border-color: var(--teal); color: var(--teal); }
+.open-toggle.on .open-toggle-dot { background: var(--teal); }
+.open-toggle.on .open-toggle-n { background: var(--teal); color: var(--ink); }

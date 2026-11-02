@@ -620,7 +620,7 @@ function wireVenueSubmitForm() {
     saveBtn.innerHTML = `${loadingRing(16)}Submitting…`;
     const body = readState();
     try {
-      const res = await fetch('/api/venues', {
+      const res = await apiFetch('/api/venues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -989,7 +989,7 @@ function wireVenueEditor(venue, opts = {}) {
     saveBtn.innerHTML = `${loadingRing(16)}Saving…`;
     const body = readState();
     try {
-      const res = await fetch(`/api/venues/${encodeURIComponent(venue.id)}`, {
+      const res = await apiFetch(`/api/venues/${encodeURIComponent(venue.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -1126,7 +1126,7 @@ function adminPendingCardHtml(v) {
 function admResolveCard(card, noteHtml) {
   card.classList.add('adm-done');
   card.innerHTML = `<div class="adm-done-note">${noteHtml}</div>`;
-  fetch('/api/venues', { cache: 'no-store' }).then(r => r.json()).then(refreshVenuesFromLive)
+  apiFetch('/api/venues', { cache: 'no-store' }).then(r => r.json()).then(refreshVenuesFromLive)
     .catch(e => console.warn('[muan] venue refresh after review failed', e));
   const list = document.getElementById('admList');
   if (list && !list.querySelector('.adm-card:not(.adm-done)')) {
@@ -1164,7 +1164,7 @@ function wireAdminPendingSheet() {
       rejectToggle.disabled = true;
       approveBtn.textContent = 'Approving…';
       try {
-        const res = await fetch(`/api/venues/${encodeURIComponent(id)}/approve`, {
+        const res = await apiFetch(`/api/venues/${encodeURIComponent(id)}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lat, lng }),
@@ -1191,7 +1191,7 @@ function wireAdminPendingSheet() {
       rejectConfirm.disabled = true;
       rejectConfirm.textContent = 'Rejecting…';
       try {
-        const res = await fetch(`/api/venues/${encodeURIComponent(id)}/reject`, {
+        const res = await apiFetch(`/api/venues/${encodeURIComponent(id)}/reject`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason }),
@@ -1235,7 +1235,7 @@ function wireVenuePhotoUpload(venue, root, photosState, onSaved) {
   // PATCH (upload succeeded, save didn't) can be retried without
   // re-uploading the file
   async function attachPhoto(stored) {
-    const res = await fetch(`/api/venues/${encodeURIComponent(venue.id)}`, {
+    const res = await apiFetch(`/api/venues/${encodeURIComponent(venue.id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photos: photosState.concat(stored) }),
@@ -1277,7 +1277,7 @@ function wireVenuePhotoUpload(venue, root, photosState, onSaved) {
   // ("Uploading 2 of 4… " or just "Uploading… " for a single file) stays in
   // front of the percentage ring for the whole upload.
   async function uploadOneFile(file, progressPrefix) {
-    const sigRes = await fetch('/api/upload-signature', {
+    const sigRes = await apiFetch('/api/upload-signature', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ venue_id: venue.id }),

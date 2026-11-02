@@ -83,6 +83,34 @@ const MAP_BOUNDS = { maxBounds: [[102.45, 17.85], [102.82, 18.15]], minZoom: 12.
 const HOME_VIEW = { center: [102.6090, 17.9650], zoom: 14.0 };
 const GOOGLE_CLIENT_ID = '768624583305-553qrbhib2mqbbi10ifsr18b8uqu4uvk.apps.googleusercontent.com';
 
+/* ---------- the phone app (Capacitor, see app/README.md) ----------
+   On the website the page and the API share one address, so every API
+   call is plain '/api/...'. Inside the phone app the page is loaded from
+   the app itself (https://localhost on Android, capacitor://localhost on
+   iPhone), so API calls have to name the real server — app/build-www.mjs
+   writes it into window.PSD_SERVER — and the session goes in a header as a
+   token, because the server's cookie is never sent to a different site.
+   On the website PSD_SERVER is unset and nothing here changes anything. */
+const SERVER = String(window.PSD_SERVER || '').replace(/\/+$/, '');
+const IS_APP = SERVER !== '';
+// the public address for links people share (a venue, a wheel, the recap):
+// the app's own address (https://localhost) means nothing to anyone else
+const SITE_ORIGIN = SERVER || location.origin;
+const TOKEN_KEY = 'psd-token';
+function appToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+function setAppToken(t) {
+  try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+}
+// fetch() for the app's own /api: on the website exactly fetch(); in the
+// phone app aimed at the server, with the session token attached
+function apiFetch(path, opts = {}) {
+  if (!IS_APP) return fetch(path, opts);
+  const headers = new Headers(opts.headers || {});
+  const t = appToken();
+  if (t) headers.set('Authorization', 'Bearer ' + t);
+  return fetch(SERVER + path, { ...opts, headers });
+}
+
 const state = {
   venues: [],
   events: [],
@@ -624,7 +652,7 @@ async function boot() {
     // the same moment but deliberately not awaited, and reconciled against
     // the bundle by refreshVenuesFromLive() further down.
     const pre = window.__boot || {};
-    const livePromise = (pre.live || fetch('/api/venues').then(r => r.json()))
+    const livePromise = (pre.live || apiFetch('/api/venues').then(r => r.json()))
       .catch(e => { console.warn('[muan] live venues fetch failed', e); return null; });
 
     /* These three used to be one Promise.all whose rejection fell through to
@@ -702,7 +730,7 @@ async function boot() {
     // doesn't block or delay anything else in boot(); a signed-out visitor
     // just gets signed_out:true back and the button stays on the chibi/
     // emoji fallback it already shows.
-    const mePromise = fetch('/api/me').then(r => r.json()).catch(() => ({ ok: false }));
+    const mePromise = apiFetch('/api/me').then(r => r.json()).catch(() => ({ ok: false }));
     mePromise.then(me => {
       if (me?.ok && !me.signed_out) {
         applyAvatarUrl(me.avatar_url || null);
@@ -755,7 +783,7 @@ async function boot() {
     // and against a #sheetInner that's already been re-rendered since this
     // fetch started (a filter switch, or requestLocation() below landing
     // first), which would insert the bar into a *different* screen's content.
-    fetch('/api/weather')
+    apiFetch('/api/weather')
       .then(r => r.ok ? r.json() : Promise.reject(new Error('weather fetch failed: ' + r.status)))
       .then(d => (d?.ok ? d : null))
       .catch(e => { console.warn('[muan] weather unavailable', e); return null; })
@@ -1398,6 +1426,15 @@ function loadGoogleSignIn() {
 }
 
 async function initGoogleSignIn(containerId) {
+  if (IS_APP) {
+    // Google refuses its web sign-in inside an app's built-in browser
+    // ("disallowed_useragent"), so the app needs Google's native sign-in —
+    // stage 3 in app/README.md. Until then, say so rather than show a
+    // button that can only fail.
+    const el = document.getElementById(containerId);
+    if (el) el.innerHTML = '<div class="gsi-app-note">Signing in inside the app is coming soon. Saving places and the wheel work without it.</div>';
+    return;
+  }
   if (!(await loadGoogleSignIn())) {
     console.warn('[muan] Google sign-in script unavailable');
     return;
@@ -1420,12 +1457,14 @@ async function initGoogleSignIn(containerId) {
         else console.warn('[muan] sign-in:', text);
       };
       try {
-        const r = await fetch('/api/auth/google', {
+        const r = await apiFetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ credential: resp.credential }),
         });
         const data = await r.json().catch(() => null);
+        // the phone app gets its session back as a token (see apiFetch)
+        if (data?.ok && IS_APP && data.token) setAppToken(data.token);
         if (data?.ok) openFlameSheet();
         else say("Couldn't sign you in. Please try again.");
       } catch (e) {
@@ -1452,8 +1491,9 @@ async function initGoogleSignIn(containerId) {
 async function signOut() {
   let ok = false;
   try {
-    const r = await fetch('/api/auth/logout', { method: 'POST' });
+    const r = await apiFetch('/api/auth/logout', { method: 'POST' });
     ok = r.ok;
+    if (ok) setAppToken(null);
   } catch (e) { console.warn('[muan] sign-out failed', e); }
   await openFlameSheet();
   if (!ok) flashLabel(document.querySelector('[data-sign-out]'), "Couldn't sign out — still signed in", 4000);
@@ -1564,7 +1604,7 @@ async function openFlameSheet() {
   setMobileScreen('you');
   setSheet('<div class="s-sub" style="text-align:center;padding:30px 0;">Loading your flame…</div>');
   let me = null;
-  try { me = await (await fetch('/api/me')).json(); } catch(e) { console.warn('[muan] /api/me failed', e); }
+  try { me = await (await apiFetch('/api/me')).json(); } catch(e) { console.warn('[muan] /api/me failed', e); }
   if (!me || !me.ok) {
     /* "try again" with nothing to try it with was a dead end: the only way
        back was to leave the screen and come back, which is not obvious and
@@ -1633,7 +1673,7 @@ async function openFlameSheet() {
 // as if nobody owned anything — no error, no retry, nothing to see it by.
 async function fetchMyVenues() {
   try {
-    const data = await (await fetch('/api/my-venues')).json();
+    const data = await (await apiFetch('/api/my-venues')).json();
     return data.ok ? { ok: true, venues: data.venues } : { ok: false, venues: [] };
   } catch (e) {
     return { ok: false, venues: [] };
@@ -1646,7 +1686,7 @@ async function fetchMyVenues() {
 // from "the request failed," or a broken endpoint just looks like a quiet day.
 async function fetchPendingVenues() {
   try {
-    const data = await (await fetch('/api/pending')).json();
+    const data = await (await apiFetch('/api/pending')).json();
     return data.ok ? { ok: true, venues: data.venues } : { ok: false, venues: [] };
   } catch (e) {
     return { ok: false, venues: [] };
@@ -1686,7 +1726,7 @@ function renderFlameIntro(flameHtml, onDone) {
     requestAnimationFrame(() => flameEl?.setAttribute('data-heat', 'burning'));
   }
   document.querySelector('[data-intro-done]')?.addEventListener('click', async () => {
-    try { await fetch('/api/intro-seen', { method: 'POST' }); } catch (e) {}
+    try { await apiFetch('/api/intro-seen', { method: 'POST' }); } catch (e) {}
     onDone();
   });
 }
@@ -2073,7 +2113,7 @@ async function recapImageBlob(me) {
   g.fillStyle = '#2A2419'; g.font = font(500, 50);
   g.fillText(top ? `Most visited: ${top.short_name || top.name}` : 'in Vientiane', W / 2, 1500);
   g.fillStyle = '#E8462A'; g.beginPath(); if (g.roundRect) g.roundRect(W / 2 - 300, 1690, 600, 110, 55); else g.rect(W / 2 - 300, 1690, 600, 110); g.fill();
-  g.fillStyle = '#FFFCF5'; g.font = font(700, 46); g.fillText(location.host, W / 2, 1762);
+  g.fillStyle = '#FFFCF5'; g.font = font(700, 46); g.fillText(new URL(SITE_ORIGIN).host, W / 2, 1762);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
 
@@ -2093,7 +2133,7 @@ async function shareRecap(me) {
     if (e && e.name === 'AbortError') return;
     console.warn('[muan] recap image share failed, sharing text instead', e);
   }
-  return shareOrCopy({ title: 'Paisaidee', text, url: location.origin + '/', copied: 'Copied — paste it anywhere' });
+  return shareOrCopy({ title: 'Paisaidee', text, url: SITE_ORIGIN + '/', copied: 'Copied — paste it anywhere' });
 }
 
 // the normal You screen — the flame (or an invitation in its place), the
@@ -3690,7 +3730,7 @@ function spinWheel() {
 function shareWheel() {
   if (!wheelPop) return;
   const { pool, seed } = wheelPop;
-  const url = `${location.origin}/?wheel=${pool.map(v => encodeURIComponent(v.id)).join(',')}&seed=${seed}`;
+  const url = `${SITE_ORIGIN}/?wheel=${pool.map(v => encodeURIComponent(v.id)).join(',')}&seed=${seed}`;
   // TODO(lao): "ເລືອກບ່ອນໃດດີ?" is the phrasing given in the task, reused
   // here and in the overlay title and functions/index.js's og block so the
   // link, the preview and the page all say the same thing. Not yet checked
@@ -4636,7 +4676,7 @@ function shouldShowMoodIntro(me) {
 // else (see functions/api/mood-intro-seen.js).
 function markMoodIntroSeen() {
   try { localStorage.setItem(MOOD_INTRO_KEY, '1'); } catch (e) {}
-  fetch('/api/mood-intro-seen', { method: 'POST' }).catch(() => {});
+  apiFetch('/api/mood-intro-seen', { method: 'POST' }).catch(() => {});
 }
 
 // fire-and-forget log of one mood-chooser tap (migrations/015_mood_picks.sql,
@@ -4645,7 +4685,7 @@ function markMoodIntroSeen() {
 // results: a failed log must not delay the thing the person actually
 // tapped for.
 function logMoodPick(tag) {
-  fetch('/api/mood-pick', {
+  apiFetch('/api/mood-pick', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tag }),
@@ -6247,7 +6287,7 @@ function updateCheckinButton(v) {
 // the canonical deep link for a venue — the same ?v=<id> boot() reads back
 // (see deepLinkId there) and the same one functions/index.js rewrites the
 // og: tags for, so a link pasted into Messenger shows that venue's card.
-const venueShareUrl = (v) => `${location.origin}/?v=${encodeURIComponent(v.id)}`;
+const venueShareUrl = (v) => `${SITE_ORIGIN}/?v=${encodeURIComponent(v.id)}`;
 
 /* The invitation itself. Lao first, English second — CLAUDE.md: "Lao-first,
    English supports" — and a question, not a label, because the thing being
@@ -6744,7 +6784,7 @@ async function toggleRoute(v) {
       from_lat: state.userPos.lat, from_lng: state.userPos.lng,
       to_lat: v.lat, to_lng: v.lng, mode: 'driving-car',
     });
-    const data = await (await fetch('/api/route?' + p)).json();
+    const data = await (await apiFetch('/api/route?' + p)).json();
     if (state.selectedId !== v.id) {
       // sheet moved on while we waited. The element is usually detached by
       // now, but release the claim either way so nothing can be left frozen
@@ -7020,7 +7060,7 @@ async function doCheckin(v) {
   const btn = document.getElementById('checkinBtn');
   if (btn) { btn.disabled = true; document.getElementById('checkinLabel').textContent = 'Checking in…'; }
   try {
-    const res = await fetch('/api/checkin', {
+    const res = await apiFetch('/api/checkin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ venue_id: v.id, lat: state.userPos.lat, lng: state.userPos.lng }),

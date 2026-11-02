@@ -9,7 +9,7 @@
 const INTERNAL = [
   /^\/(CLAUDE|PHASE2|README)\.md$/i,
   /^\/schema\.sql$/i,
-  /^\/(design|marketing|migrations|scripts|functions|\.claude|\.wrangler|\.git)(\/|$)/i,
+  /^\/(app|design|marketing|migrations|scripts|functions|\.claude|\.wrangler|\.git)(\/|$)/i,
 ];
 
 export async function onRequest(context) {

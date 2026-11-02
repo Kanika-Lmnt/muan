@@ -1,0 +1,20 @@
+{
+  "name": "paisaidee-app",
+  "private": true,
+  "description": "Paisaidee as a phone app: the website wrapped with Capacitor. See README.md.",
+  "scripts": {
+    "build": "node build-www.mjs",
+    "build:local": "node build-www.mjs --server http://10.0.2.2:8788",
+    "sync": "node build-www.mjs && cap sync",
+    "android": "cap run android",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0"
+  }
+}

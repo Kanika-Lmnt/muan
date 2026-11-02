@@ -41,7 +41,7 @@
         picks: fetch('data/picks.json')
           .then(function (r) { return r.ok ? r.json() : null; })
           .catch(function () { return null; }),
-        live: fetch('/api/venues')
+        live: fetch((window.PSD_SERVER || '') + '/api/venues')
           .then(function (r) { return r.json(); })
           .catch(function () { return null; }),
       };

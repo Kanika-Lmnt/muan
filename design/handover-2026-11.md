@@ -219,3 +219,31 @@ which already loads async.
   place was visited 2+ times). **Share my October** makes a 1080×1920 story
   image (cream, Phai, the numbers, the site address) and opens the phone's
   share sheet; where image sharing isn't supported it shares/copies text.
+
+## 13. Phone app groundwork (branch claude/capacitor)
+
+Step 1 of the Capacitor plan. Start with app/README.md, which is also the
+learning guide.
+- The website calls the API through `apiFetch()` (js/app.js, owner.js,
+  avatar.js). On the website it's plain fetch. In the app it prefixes the
+  server address (`window.PSD_SERVER`, written by app/build-www.mjs) and
+  sends the session as `Authorization: Bearer`.
+- Server: `getSessionUser` accepts the bearer token or the cookie
+  (functions/api/_auth.js). /api/auth/google returns the token in the
+  body only to the app origins (https://localhost, capacitor://localhost).
+  Logout deletes either. functions/api/_middleware.js answers CORS for
+  those two origins and lets their writes past the cross-site check.
+  That's safe because they carry a token a browser never attaches by itself.
+- Share links (venue, wheel, recap) use `SITE_ORIGIN`, which is the real
+  site in the app.
+- In the app the You tab says sign-in is coming (Google blocks web sign-in
+  in WebViews). Native sign-in is stage 3.
+- app/ (package.json, capacitor.config.js, build-www.mjs) is 404'd on the
+  public site like design/ and scripts/. The website still has no build
+  step: app/www is a copy made only for the app.
+- Tested: the app build served as https://localhost against local
+  wrangler loads venues, /api/me with a token, and the signed-out note.
+  Preflight returns 204 with CORS headers. A POST from another origin is
+  still refused. The website regression run is unchanged.
+- No migration. Safe to merge whenever. On the website the only difference
+  is the extra CORS answer for the two app origins.

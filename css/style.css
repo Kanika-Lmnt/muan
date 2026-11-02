@@ -4433,3 +4433,11 @@ textarea:focus-visible,
   border: 1px solid var(--ink4); background: var(--ink); color: var(--bone);
   font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer;
 }
+
+/* the phone app's stand-in for the Google button until native sign-in is
+   in (initGoogleSignIn(), app/README.md stage 3) */
+.gsi-app-note {
+  max-width: 300px; margin: 0 auto; padding: 12px 16px; border-radius: 14px;
+  background: var(--ink3); color: var(--secondary);
+  font-size: 14px; line-height: 1.5; text-align: center;
+}

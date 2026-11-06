@@ -1,6 +1,7 @@
 import { getSessionUser } from './_auth.js';
 import { computeHeat } from './_heat.js';
 import { checkinRadiusFrom } from './_checkin-config.js';
+import { vtMonth, prevMonthOf, vtMonthRange } from './_time.js';
 
 const PHAI_STAGES = ['ember', 'flicker', 'flame', 'blaze', 'naga'];
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -294,18 +295,26 @@ export async function onRequest(context) {
     const lastCheckin = await context.env.DB.prepare(
       `SELECT lat, lng, created_at FROM checkins WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
     ).bind(user.id).first();
+    // Two check-ins from one spot within half an hour: stops collecting
+    // every venue in a cluster (Nam Phu, the riverside) from one chair.
+    // Was an hour, which also stopped honest bar-hopping — Baron and
+    // Mahasan are 6 m apart, and moving next door after a drink is the
+    // whole point of the app. Half an hour is a drink.
     if (lastCheckin) {
       const minutesSince = (Date.now() - new Date(lastCheckin.created_at).getTime()) / 60000;
-      if (minutesSince < 60) {
+      if (minutesSince < 30) {
         const movedM = haversineMeters(lastCheckin.lat, lastCheckin.lng, lat, lng);
         if (movedM < 200) {
-          return Response.json({ ok: false, same_spot: true, message: "you haven't moved since your last check-in" });
+          const wait = Math.max(1, Math.ceil(30 - minutesSince));
+          return Response.json({ ok: false, same_spot: true, message: `You just checked in nearby — try again in ${wait} min` });
         }
       }
     }
 
     const nowIso = new Date().toISOString();
-    const currentMonth = nowIso.slice(0, 7);
+    // months in Vientiane time, not UTC (see _time.js)
+    const currentMonth = vtMonth();
+    const [monthStart, monthEnd] = vtMonthRange(currentMonth);
 
     const priorVisits = await context.env.DB.prepare(
       `SELECT COUNT(*) as c FROM checkins WHERE user_id = ? AND venue_id = ?`
@@ -313,8 +322,8 @@ export async function onRequest(context) {
     const firstVisit = priorVisits.c === 0;
 
     const monthlyVisits = await context.env.DB.prepare(
-      `SELECT COUNT(*) AS c FROM checkins WHERE user_id = ? AND venue_id = ? AND substr(created_at,1,7) = ?`
-    ).bind(user.id, venue_id, currentMonth).first();
+      `SELECT COUNT(*) AS c FROM checkins WHERE user_id = ? AND venue_id = ? AND created_at >= ? AND created_at < ?`
+    ).bind(user.id, venue_id, monthStart, monthEnd).first();
 
     let embersEarned;
     if (firstVisit) {
@@ -390,8 +399,7 @@ export async function onRequest(context) {
     // → +1; any longer gap → a fresh streak of 1. It used to be "+1 for any
     // new month", so a streak never broke — three months off and back again
     // still counted as an unbroken run.
-    const prev = new Date(Date.UTC(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)) - 2, 1));
-    const previousMonth = prev.toISOString().slice(0, 7);
+    const previousMonth = prevMonthOf(currentMonth);
     await context.env.DB.prepare(
       `UPDATE users SET embers_total = embers_total + ?,
          streak_months = CASE

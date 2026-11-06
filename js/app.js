@@ -1206,7 +1206,7 @@ const AVATARS = ['#E8B98A|#1C1726','#C98E6B|#131019','#E8B98A|#7C5CE0','#C98E6B|
 const ITEMS = [
   { id:'coffee', type:'cafe',  need:3,  name:'Coffee cup',   name_lo:'ຈອກກາເຟ', where:'cafés' },
   { id:'beer',   type:'bar',   need:3,  name:'Beer mug',     name_lo:'ຈອກເບຍ', where:'bars' },
-  { id:'ticket', type:'venue', need:3,  name:'Ticket stub',  name_lo:'ປີ້', where:'markets' },
+  { id:'ticket', type:'venue', need:3,  name:'Ticket stub',  name_lo:'ປີ້', where:'markets and malls' },
   { id:'crown',  type:'any',   need:20, name:'Explorer cap', name_lo:'ໝວກນັກສຳຫຼວດ', where:'places' },
 ];
 
@@ -1976,10 +1976,16 @@ function nextUpHtml(me, items, stageLabels, stageLo) {
     const left = Math.max(0, me.next_stage_at - me.embers_total);
     const per = me.ember_new_venue || 25;
     const places = Math.max(1, Math.ceil(left / per));
+    // "about 72 new places" when there are 45 left to find would be a
+    // promise the city can't keep — say what actually gets you there
+    const unfound = state.venues.filter(v => v.pin_status !== 'pending' && !(me.venue_counts || {})[v.id]).length;
+    const how = places <= unfound
+      ? `about ${plural(places, 'new place', 'new places')}`
+      : 'new places and going back both count';
     goals.push({
       ico: mascotHtml('idle', 'fl-goal-phai'),
       title: `Phai becomes ${esc(stageLabels[me.next_stage])} · <span class="lao">${esc(stageLo[me.next_stage])}</span>`,
-      sub: `${left} embers to go — about ${plural(places, 'new place', 'new places')}`,
+      sub: `${left} embers to go — ${how}`,
       p: (me.embers_total - floor) / Math.max(1, me.next_stage_at - floor),
     });
   }
@@ -6412,8 +6418,14 @@ function renderHomeSheet() {
   const lateQ = sortForDisplay(late);
   if (showVenueSections && lateQ.length) {
     rendered = true;
-    html += secH('Open late · ເປີດເດິກ') +
-      sectionWrap(lateQ.map(v => mobile ? rowCard(v) : sectionCard(v, venueLine(v, openStatus(v).label))).join(''));
+    /* a swipe row on phones, like On fire: with 50+ venues this list grew
+       to a dozen-plus full-width cards and pushed All places a screen and a
+       half further down. Everything is still here, one swipe away. */
+    const railed = mobile && ON_FIRE_CAROUSEL;
+    html += secH('Open late · ເປີດເດິກ', railed ? plural(lateQ.length, 'place', 'places') : '') +
+      (railed
+        ? `<div class="fire-rail">${lateQ.map(v => railCardHtml(v)).join('')}</div>`
+        : sectionWrap(lateQ.map(v => mobile ? rowCard(v) : sectionCard(v, venueLine(v, openStatus(v).label))).join('')));
   }
 
   /* Every venue, beneath the editorial sections. All used to be ONLY those

@@ -287,3 +287,27 @@ learning guide.
 - The cafés tab's "Recommended" switch is renamed "Photos". It was always
   "cafés with 2+ photos", which isn't a recommendation.
 - TODO(lao): ອັນດັບ (Top lists), ອັນດັບ + type, ເລືອກບໍ່ຖືກບໍ?
+
+## 16. Wheel payoff, new venues, check-up pass (6 Nov)
+
+- **Wheel result**: landing on an open place pulses the slice, buzzes the
+  phone and fires confetti, then opens that venue's page with a "Phai
+  picked this one" banner (Spin again / Share). Shared wheels skip Spin
+  again; a closed winner keeps the quiet note.
+- **19 new venues** (10 bars, 9 cafés), pins and hours from each venue's
+  Google Maps listing (scripts/add-venues-2026-11.sql, then
+  place-venues-2026-11.sql). Six candidates dropped as closed or missing.
+  Closing times after midnight use the 24:00+ convention (25:00 = 1 am).
+  Berliner Garden has a midday break, which the one-range-per-day hours
+  can't hold, so it carries an hours_note instead.
+- **Months and nights now use Vientiane time** (functions/api/_time.js).
+  The monthly streak, the monthly ember tiers, "nights out" and the recap
+  all sliced UTC timestamps, so anything between midnight and 7 am local
+  landed in the wrong month or day. A night now runs until 6 am.
+- **Bar-hopping**: the "you haven't moved" rule was an hour, which blocked
+  checking in next door (Baron and Mahasan are 6 m apart). Now 30 minutes,
+  and the message says how long to wait.
+- **Next up** no longer promises "about 72 new places" when fewer are left
+  to find. It says new places and going back both count.
+- **Open late** is a swipe row on phones. With 50+ venues it had become
+  a dozen-plus cards above All places.

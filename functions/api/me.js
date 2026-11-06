@@ -18,6 +18,20 @@ export async function onRequest(context) {
       'SELECT created_at FROM checkins WHERE user_id=? AND created_at >= ? AND created_at < ?'
     ).bind(user.id, monthStart, monthEnd).all();
     const nightsThisMonth = [...new Set(monthRows.results.map(r => vtNight(r.created_at)))];
+
+    // for the progress page (openProgressSheet() in js/app.js): the latest
+    // check-ins with what each paid, every month there was a check-in in
+    // (the streak calendar), and this month's embers
+    const recentRows = await db.prepare(
+      'SELECT venue_id, created_at, embers FROM checkins WHERE user_id=? ORDER BY created_at DESC LIMIT 12'
+    ).bind(user.id).all();
+    const allTimes = await db.prepare(
+      'SELECT created_at, embers FROM checkins WHERE user_id=?'
+    ).bind(user.id).all();
+    const monthsActive = [...new Set(allTimes.results.map(r => vtMonth(new Date(r.created_at))))].sort();
+    const embersMonth = allTimes.results
+      .filter(r => r.created_at >= monthStart && r.created_at < monthEnd)
+      .reduce((n, r) => n + (r.embers || 0), 0);
     const venues = await db.prepare(
       'SELECT COUNT(DISTINCT venue_id) AS c FROM checkins WHERE user_id=?'
     ).bind(user.id).first();
@@ -118,6 +132,10 @@ export async function onRequest(context) {
       heat_level,
       // the nights out this month (a night past midnight counts once)
       checkin_days: nightsThisMonth,
+      recent: recentRows.results,
+      months_active: monthsActive,
+      embers_month: embersMonth,
+      phai_thresholds: thresholds,
       venue_counts: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.c])),
       // last check-in per venue (ISO) — "your places" on the You screen
       venue_last: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.last])),

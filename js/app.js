@@ -157,7 +157,7 @@ function initNativeBackButton() {
       if (view === 'venue' && state.venuePushed) return history.back();
       // anything else: press the page's own back/close button, so its
       // guards (unsaved owner edits) still apply
-      const back = document.querySelector('#sheetInner [data-home]');
+      const back = document.querySelector('#sheetInner [data-back]') || document.querySelector('#sheetInner [data-home]');
       return back ? back.click() : goHome();
     }
     if (state.screen && state.screen !== 'home') {
@@ -803,6 +803,14 @@ async function boot() {
     mePromise.then(me => {
       if (me?.ok && !me.signed_out) {
         applyAvatarUrl(me.avatar_url || null);
+        // where this person has been, for the Top lists' "been" marks
+        state.myCounts = me.venue_counts || {};
+        if (state.screen === 'home' && state.sheetView?.type === 'home') {
+          const sh = document.getElementById('sheet');
+          const y = sh ? sh.scrollTop : 0;
+          renderHomeSheet();
+          if (sh) sh.scrollTop = y;
+        }
         loadOwnPending().catch(() => {});
       }
     });
@@ -1869,6 +1877,7 @@ function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName
         ? `<b>${nights}</b> ${nights === 1 ? 'night' : 'nights'} out in ${monthName}`
         : `no nights out yet in ${monthName}`}</div>
       ${streakLineHtml(me)}
+      <button type="button" class="fl-progress-link" data-open-progress>See all your progress ›</button>
     </div>`;
 }
 
@@ -2217,6 +2226,177 @@ async function shareRecap(me) {
 // identity card, then the plain owner/admin rows. Split out of
 // openFlameSheet() so renderFlameIntro()'s "Got it" can hand off into it
 // directly.
+/* ---------- Progress page (openProgressSheet()) ----------
+   Everything the game counts, on one screen, each with how far there is to
+   go: Phai's five stages as a path, where this month's embers came from,
+   the latest check-ins and what each paid, the monthly streak as a row of
+   months, every badge and avatar item with a progress bar. The You screen
+   shows the nearest goals; this is the whole map of them.
+   All numbers come from /api/me; the client only lays them out. */
+const PHAI_STAGES = ['ember', 'flicker', 'flame', 'blaze', 'naga'];
+const STAGE_LABELS = { ember: 'Ember', flicker: 'Flicker', flame: 'Flame', blaze: 'Blaze', naga: 'Naga fire' };
+const STAGE_LO = { ember: 'ຖ່ານໄຟ', flicker: 'ໄຟວິບວັບ', flame: 'ແປວໄຟ', blaze: 'ໄຟລຸກ', naga: 'ໄຟນາກ' };
+// until Kar's stage art exists (assets/art/phai-stage-N.png), Phai grows
+// through the poses we have, smallest first
+const STAGE_POSE = { ember: 'resting', flicker: 'idle', flame: 'wink', blaze: 'delighted', naga: 'looking-over' };
+const STAGE_SIZE = { ember: 34, flicker: 40, flame: 46, blaze: 52, naga: 58 };
+
+function phaiPathHtml(me) {
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const cur = PHAI_STAGES.indexOf(me.phai_stage);
+  return `<div class="pg-path">${PHAI_STAGES.map((st, i) => {
+    const state = i < cur ? 'done' : i === cur ? 'now' : 'next';
+    let sub;
+    if (state === 'done') sub = `reached · ${t[i]} embers`;
+    else if (state === 'now') {
+      sub = i + 1 < PHAI_STAGES.length
+        ? `you are here · ${t[i + 1] - me.embers_total} to ${STAGE_LABELS[PHAI_STAGES[i + 1]]}`
+        : 'you are here · the highest stage';
+    } else sub = `${t[i]} embers`;
+    const p = state === 'now' && i + 1 < t.length
+      ? (me.embers_total - t[i]) / Math.max(1, t[i + 1] - t[i]) : null;
+    const size = STAGE_SIZE[st];
+    return `<div class="pg-stage ${state}">
+      <span class="pg-stage-art"><img src="assets/mascot/phai-${STAGE_POSE[st]}.svg" alt="" width="${size}" height="${Math.round(size * 1.2)}" loading="lazy" draggable="false"></span>
+      <span class="pg-stage-body">
+        <span class="pg-stage-name">${STAGE_LABELS[st]} · <span class="lao">${STAGE_LO[st]}</span></span>
+        <span class="pg-stage-sub">${sub}</span>
+        ${p !== null ? goalBarHtml(p) : ''}
+      </span>
+      ${state === 'done' ? '<span class="pg-tick" aria-label="reached">✓</span>' : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function emberSourcesHtml(me) {
+  const nw = me.ember_new_venue || 25, rp = me.ember_repeat || 5;
+  return `
+    <div class="pg-rows">
+      <div class="pg-row"><span>A place you've never checked in at</span><b>+${nw}</b></div>
+      <div class="pg-row"><span>Going back (first 2 times a month)</span><b>+${rp}</b></div>
+      <div class="pg-row"><span>Going back (3rd to 6th time)</span><b>+2</b></div>
+      <div class="pg-row"><span>After that</span><b>+1</b></div>
+    </div>
+    <div class="pg-note">Up to 100 embers a day and 6 check-ins a night. New places pay the most, so the city is the game.</div>`;
+}
+
+function recentCheckinsHtml(me) {
+  const rows = (me.recent || []).map(r => {
+    const v = venueById(r.venue_id);
+    const name = v ? (v.short_name || v.name) : 'A place no longer listed';
+    const why = r.embers >= (me.ember_new_venue || 25) ? 'first visit'
+      : r.embers === 0 ? 'daily cap reached' : 'going back';
+    return `<div class="pg-row pg-recent"${v ? ` role="button" tabindex="0" data-open-venue="${esc(v.id)}"` : ''}>
+      <span><span class="pg-recent-name">${esc(name)}</span><span class="pg-recent-sub">${esc(shortDate(r.created_at))} · ${why}</span></span>
+      <b>+${r.embers}</b></div>`;
+  });
+  return rows.length ? `<div class="pg-rows">${rows.join('')}</div>`
+    : `<div class="pg-note">Your check-ins and what they earned will list here.</div>`;
+}
+
+// the last 12 months as dots, lit for months with a check-in; the streak
+// is the run of lit months ending this month or last
+function streakMonthsHtml(me) {
+  const active = new Set(me.months_active || []);
+  const months = [];
+  const [y, m] = (me.month || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    months.push(d.toISOString().slice(0, 7));
+  }
+  let best = 0, run = 0;
+  [...active].sort().forEach((mo, i, arr) => {
+    const prev = i && new Date(Date.UTC(+arr[i - 1].slice(0, 4), +arr[i - 1].slice(5, 7), 1)).toISOString().slice(0, 7);
+    run = i && prev === mo ? run + 1 : 1;
+    best = Math.max(best, run);
+  });
+  const now = me.streak_now ?? 0;
+  return `
+    <div class="pg-months">${months.map(mo => {
+      const label = new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 1, 1)).toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+      return `<span class="pg-month${active.has(mo) ? ' on' : ''}${mo === me.month ? ' cur' : ''}"><i></i>${label.charAt(0)}</span>`;
+    }).join('')}</div>
+    <div class="pg-streak-nums">
+      <span><b>${now}</b> ${now === 1 ? 'month' : 'months'} now</span>
+      <span><b>${best}</b> best</span>
+      <span><b>${active.size}</b> ${active.size === 1 ? 'month' : 'months'} out in all</span>
+    </div>
+    ${streakLineHtml(me)}`;
+}
+
+function badgeProgressHtml(me) {
+  const counts = me.venue_counts || {};
+  const earned = new Map((me.badges || []).map(b => [b.id, b]));
+  const all = (me.all_badges?.length ? me.all_badges : (me.badges || []))
+    .slice().sort((a, b) => (earned.has(b.id) ? 1 : 0) - (earned.has(a.id) ? 1 : 0));
+  return `<div class="pg-list">${all.map(b => {
+    const rule = BADGES.find(x => x.id === b.id);
+    const got = earned.get(b.id);
+    const pr = rule ? rule.progress(counts) : { have: got ? 1 : 0, need: 1 };
+    const have = got ? pr.need : Math.min(pr.have, pr.need);
+    return `<div class="pg-item${got ? ' got' : ''}">
+      <span class="pg-item-ico">${badgeIcon(b, 22)}</span>
+      <span class="pg-item-body">
+        <span class="pg-item-name">${esc(b.name)}${got ? `<span class="pg-item-when">${esc(shortDate(got.earned_at))}</span>` : ''}</span>
+        <span class="pg-item-sub">${esc(b.description || '')}</span>
+        ${got ? '' : `${goalBarHtml(have / pr.need)}<span class="pg-item-count">${have} / ${pr.need}</span>`}
+      </span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function itemProgressListHtml(me) {
+  return `<div class="pg-list">${itemProgress(me.venue_counts || {}).map(it => `
+    <div class="pg-item${it.earned ? ' got' : ''}">
+      <span class="pg-item-ico">${itemIconSVG(it.id, 22)}</span>
+      <span class="pg-item-body">
+        <span class="pg-item-name">${esc(it.name)} · <span class="lao">${esc(it.name_lo)}</span></span>
+        <span class="pg-item-sub">${it.earned ? 'on your avatar' : `visit ${it.need} ${esc(it.where)}`}</span>
+        ${it.earned ? '' : `${goalBarHtml(it.have / it.need)}<span class="pg-item-count">${it.have} / ${it.need}</span>`}
+      </span>
+    </div>`).join('')}</div>`;
+}
+
+// TODO(lao): 'ຄວາມຄືບໜ້າ' for "Your progress"
+function openProgressSheet(me) {
+  if (!me) return openFlameSheet();
+  setSheetView({ type: 'progress', venueId: null });
+  setMobileScreen('you');
+  setSheet(`
+    <div class="pg-wrap">
+      <div class="pg-head">
+        <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+        <div>
+          <div class="pg-title lao">ຄວາມຄືບໜ້າ</div>
+          <div class="pg-title-en">Your progress</div>
+        </div>
+      </div>
+
+      <div class="pg-totals">
+        <div><b>${me.embers_total}</b><span>embers</span></div>
+        <div><b>${me.embers_month || 0}</b><span>this month</span></div>
+        <div><b>${me.venues_explored}</b><span>${me.venues_explored === 1 ? 'place' : 'places'}</span></div>
+        <div><b>${me.total_checkins}</b><span>check-ins</span></div>
+      </div>
+
+      <div class="fl-card"><div class="fl-card-h">Phai's path</div>${phaiPathHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Monthly streak</div>${streakMonthsHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Badges · ${(me.badges || []).length} of ${(me.all_badges || []).length || (me.badges || []).length}</div>${badgeProgressHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Avatar items</div>${itemProgressListHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Latest check-ins</div>${recentCheckinsHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">How embers work</div>${emberSourcesHtml(me)}</div>
+
+      <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>
+    </div>`);
+  const sheet = document.getElementById('sheet');
+  if (sheet) sheet.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', openFlameSheet));
+  document.querySelectorAll('#sheetInner .pg-recent[data-open-venue]').forEach(el => {
+    el.addEventListener('click', () => openVenue(el.dataset.openVenue));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') openVenue(el.dataset.openVenue); });
+  });
+}
+
 function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues: [] }, pendingVenuesResult = { ok: true, venues: [] }) {
   const stageLabels = { ember:'Ember', flicker:'Flicker', flame:'Flame', blaze:'Blaze', naga:'Naga fire' };
   const stageLo = { ember:'ຖ່ານໄຟ', flicker:'ໄຟວິບວັບ', flame:'ແປວໄຟ', blaze:'ໄຟລຸກ', naga:'ໄຟນາກ' };
@@ -2278,6 +2458,9 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   pauseFlameIfReducedMotion();
   bindSavedCard(document.getElementById('sheetInner'));
   document.querySelector('[data-share-recap]')?.addEventListener('click', () => shareRecap(me));
+  document.querySelector('[data-open-progress]')?.addEventListener('click', () => openProgressSheet(me));
+  // the Top lists mark places you've been (topRowHtml()) from this
+  state.myCounts = me.venue_counts || {};
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
 
@@ -5774,7 +5957,7 @@ function topRowHtml({ v, by }, i) {
     <span class="top-rank">${i + 1}</span>
     <span class="top-thumb">${thumb}</span>
     <span class="top-body">
-      <span class="top-name">${esc(v.short_name || v.name)}</span>
+      <span class="top-name">${esc(v.short_name || v.name)}${state.myCounts?.[v.id] ? '<span class="top-been">been</span>' : ''}</span>
       <span class="top-why${by === 'visits' ? ' counted' : ''}">${why}</span>
       <span class="top-hours${st.open ? ' open' : ''}">${esc(st.label)}${d != null ? ` · ${fmtDist(d)}` : ''}</span>
     </span>
@@ -5783,7 +5966,12 @@ function topRowHtml({ v, by }, i) {
 
 function topNoteHtml(lists) {
   const anyCounted = lists.some(l => l.some(x => x.by === 'visits'));
-  return `<div class="top-note">${anyCounted
+  // "You've been to 2 of 5" — a list you can tick off (signed in only)
+  const all = lists.flat();
+  const been = state.myCounts ? all.filter(x => state.myCounts[x.v.id]).length : null;
+  const tally = been !== null && all.length
+    ? `<div class="top-tally">You've been to <b>${been}</b> of ${all.length}</div>` : '';
+  return tally + `<div class="top-note">${anyCounted
     ? 'Ranked by how many people checked in this month, then our picks.'
     : 'Our picks for now. As people check in, real visits take over the order.'}</div>`;
 }

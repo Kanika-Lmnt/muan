@@ -311,3 +311,16 @@ learning guide.
   to find. It says new places and going back both count.
 - **Open late** is a swipe row on phones. With 50+ venues it had become
   a dozen-plus cards above All places.
+
+## 17. Progress page and Top list marks (7 Nov)
+
+- **Progress page** (openProgressSheet(), from "See all your progress" on
+  the You flame card): totals, Phai's path through all five stages with
+  the current one lit and how far to the next, the monthly streak as twelve
+  month dots (with current and best run), every badge and avatar item with
+  a progress bar, the last 12 check-ins with what each paid, and how
+  embers are earned. Stage pictures use the existing Phai poses until the
+  stage art exists. /api/me adds recent, months_active, embers_month and
+  phai_thresholds for it. Back (and Android back) returns to You.
+- **Top lists, signed in**: places you've been get a "been" mark, and each
+  list says "You've been to 2 of 5".

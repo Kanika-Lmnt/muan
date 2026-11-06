@@ -59,6 +59,7 @@ whoever you send it to.
 | `package.json` | The app's Node packages (Capacitor) and the `npm run` shortcuts |
 | `capacitor.config.js` | The app's name, its ID (`app.paisaidee`), and where its web files are |
 | `build-www.mjs` | Makes `www/` from the website and writes in the server address |
+| `assets/` | The app icon and splash screen sources. `npm run icons` makes every size Android needs from them |
 | `www/` | Made by the build. Don't edit it, it's not in git |
 | `android/` | The native Android project. You create it once (step 4 below), then commit it |
 | `ios/` | The same for iPhone, later. Needs a Mac or a cloud build |
@@ -172,16 +173,69 @@ Not yet:
 - **Opening shared links in the app.** Links still open the website.
   That's "deep links", later.
 - **Push notifications.** Later. iPhone push needs the paid Apple account.
-- **A Paisaidee icon and splash screen.** The app uses Capacitor's
-  defaults for now (`@capacitor/assets` generates all the sizes from one
-  image).
+
+## Stage 2: making it feel like an app
+
+Three things a wrapped website gets wrong, and how each is fixed:
+
+**The icon and the splash screen.** A new Capacitor app has Capacitor's
+blue icon. `assets/` holds our sources: the flame pin on night ink for
+the icon, and the pin on cream for the splash (the screen while the app
+starts). One phone screen needs the icon at five sizes, and Android 8+
+also uses **adaptive icons**: a foreground and a background layer that
+each phone maker crops to its own shape (circle, squircle…) and can
+animate. That's why there are three icon files. `icon-foreground.png`
+keeps the pin small enough to survive any crop. Run:
+```
+npm run icons
+```
+It writes all 74 files into `android/app/src/main/res/`. Commit them.
+Change a source image, run it again.
+
+Android 12+ draws its own splash (the app icon on a background colour),
+so tell it the colour. In `android/app/src/main/res/values/styles.xml`,
+inside `<style name="AppTheme.NoActionBarLaunch" ...>`, add:
+```xml
+<item name="windowSplashScreenBackground">#FFFCF5</item>
+```
+
+**The status bar.** Android picks dark or light clock/battery icons from
+the *phone's* dark-mode setting, not the app's theme. So a phone in dark
+mode would draw light icons on our cream screen, and they'd vanish.
+`nativeBars()` in js/app.js tells Android which to use whenever the theme
+changes, via Capacitor's built-in **SystemBars** plugin. (The app drawing
+under the status bar, "edge to edge", is normal on Android 15+. The
+website's `env(safe-area-inset-*)` CSS already keeps content clear of it.)
+
+**The back button.** Android's back gesture is a big part of how people
+move around. A WebView can only go back through browser history, and only
+venue pages make history entries, so on Map or You "back" just closed the
+app. `initNativeBackButton()` in js/app.js uses the **@capacitor/app**
+plugin to make back undo the last thing, in this order:
+1. a photo viewer, the wheel or the mood picker → closes it
+2. the intro → the previous page (never a surprise skip)
+3. a venue or any other detail page → its own back button
+4. the Map or You tab → Home
+5. Home → the app goes to the background (Android's normal behaviour)
+
+Both features are invisible on the website: `NATIVE` is null there.
+
+After pulling stage 2 changes:
+```
+npm install
+npm run icons
+npm run sync
+```
+then Run ▶. `npm install` brings in the two new packages, and `sync` tells
+the Android project about the new plugin. Native plugins need a full
+Run ▶, not just a copy.
 
 ## The road from here
 
 1. **This branch.** The code is app-ready and the Android project runs in
    the emulator.
-2. **Polish in the emulator.** Status-bar colour, the back button, safe
-   areas, icon and splash. Learn chrome://inspect.
+2. **Polish in the emulator.** Icon, splash, status bar, back button
+   (done, see above). Learn chrome://inspect.
 3. **Native plugins.** Google sign-in, geolocation via the Capacitor
    plugin (better prompts), the native share sheet, then push.
 4. **The domain.** paisaidee.app attached in Cloudflare. Build with

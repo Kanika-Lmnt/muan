@@ -111,6 +111,62 @@ function apiFetch(path, opts = {}) {
   return fetch(SERVER + path, { ...opts, headers });
 }
 
+/* The phone app's native features (Capacitor plugins, see app/README.md):
+   window.Capacitor is put on the page by the app itself before any script
+   runs. On the website it doesn't exist and NATIVE is null, so everything
+   below is skipped. */
+const NATIVE = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins : null;
+
+// the clock/battery icons at the top and the gesture bar at the bottom:
+// dark icons on the cream theme, light icons on the night theme. Android
+// would otherwise follow the PHONE's dark mode, not the app's theme, and
+// draw light icons on cream.
+function nativeBars(theme) {
+  const bars = NATIVE?.SystemBars;
+  if (!bars) return;
+  bars.setStyle({ style: theme === 'light' ? 'LIGHT' : 'DARK' })
+    .catch(e => console.warn('[muan] system bars', e));
+}
+
+/* Android's back button/gesture. Without this it can only go back through
+   browser history, which only the venue pages use, so from the Map or You
+   tab "back" closed the app. Now it undoes the last thing, like a native
+   app: whatever floats on top first, then a detail page, then the tab back
+   to Home, and on Home it sends the app to the background (Android's own
+   behaviour for a main screen — not closing it). */
+function initNativeBackButton() {
+  const App = NATIVE?.App;
+  if (!App) return;
+  App.addListener('backButton', () => {
+    if (lightbox) return closeLightbox();
+    if (wheelPop) return closeWheel();
+    if (vibePop) return closeVibePop();
+    // the first-run intro: back = the previous page, never a surprise skip
+    const intro = document.querySelector('[data-mi-viewport]');
+    if (intro) {
+      if (intro.scrollLeft > intro.clientWidth / 2) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+        return;
+      }
+      return App.minimizeApp();
+    }
+    const view = state.sheetView?.type;
+    if (view && !BASE_SHEET_VIEWS.includes(view)) {
+      // a venue opened by tapping pushed a history entry; popping it runs
+      // the same leaveVenue() the browser's back does
+      if (view === 'venue' && state.venuePushed) return history.back();
+      // anything else: press the page's own back/close button, so its
+      // guards (unsaved owner edits) still apply
+      const back = document.querySelector('#sheetInner [data-home]');
+      return back ? back.click() : goHome();
+    }
+    if (state.screen && state.screen !== 'home') {
+      return document.querySelector('#bottomNav [data-nav="home"]')?.click();
+    }
+    App.minimizeApp();
+  });
+}
+
 const state = {
   venues: [],
   events: [],
@@ -728,6 +784,7 @@ async function boot() {
     state.picks = picks;
 
     initTheme();
+    initNativeBackButton();
     document.querySelector('.brand-mark').innerHTML = logoMark(17, 'var(--ink2)');
     document.getElementById('locateIcon').innerHTML = icoLocate(15);
     document.getElementById('navHomeIcon').innerHTML = icoHomeNav(21);
@@ -1118,6 +1175,7 @@ function applyTheme() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   if (state.map && state.theme !== theme) state.map.setStyle(mapStyle(theme));
   state.theme = theme;
+  nativeBars(theme);
 }
 
 /* boot() calls this instead of applyTheme() for the very first paint — the
@@ -1138,6 +1196,7 @@ function initTheme() {
   // browser bar colour is set here
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   state.theme = theme;
+  nativeBars(theme);
 }
 
 const AVATARS = ['#E8B98A|#1C1726','#C98E6B|#131019','#E8B98A|#7C5CE0','#C98E6B|#1FBF9C','#8A5A3B|#FF5A3C','#E8B98A|#FFC24B'];

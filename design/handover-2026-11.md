@@ -247,3 +247,22 @@ learning guide.
   still refused. The website regression run is unchanged.
 - No migration. Safe to merge whenever. On the website the only difference
   is the extra CORS answer for the two app origins.
+
+## 14. Phone app stage 2 (branch claude/capacitor)
+
+- Location: if the 4-second coarse fix times out or is unavailable, ask
+  once more with GPS (10s) before saying "Can't find you". Found on the
+  Android emulator, which has no wifi/cell positioning, but real phones
+  with wifi off hit it too. A denial is still final.
+- Icon and splash sources in app/assets/ (the flame pin on #141215 for the
+  icon, on cream for the splash). `npm run icons` generates the Android
+  sizes with @capacitor/assets.
+- `nativeBars()`: dark status-bar icons on cream, light on night, via
+  Capacitor's built-in SystemBars. Otherwise Android follows the phone's
+  dark mode.
+- `initNativeBackButton()` (@capacitor/app): back closes overlays, steps
+  back through the intro, leaves detail pages, returns Map/You to Home,
+  and on Home sends the app to the background.
+- Tested with a mocked Capacitor in Playwright: each back step, the
+  minimise on Home, and the bar style following the theme toggle. On the
+  website NATIVE is null and none of it runs.

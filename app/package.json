@@ -7,14 +7,17 @@
     "build:local": "node build-www.mjs --server http://10.0.2.2:8788",
     "sync": "node build-www.mjs && cap sync",
     "android": "cap run android",
-    "open:android": "cap open android"
+    "open:android": "cap open android",
+    "icons": "capacitor-assets generate --android"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.0",
     "@capacitor/ios": "^8.6.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
     "@capacitor/cli": "^8.6.0"
   }
 }

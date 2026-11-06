@@ -339,11 +339,22 @@ async function requestLocation() {
     // waiting on a cold GPS lock (up to 10s) — plenty for routing and for
     // the check-in radius (the server's, see state.checkinRadiusM). refineLocation() chases a sharper fix
     // afterwards in the background without making the caller wait for it.
-    const pos = await new Promise((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false, timeout: 4000, maximumAge: 300000
-      })
-    );
+    const ask = (opts) => new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, opts));
+    let pos;
+    try {
+      pos = await ask({ enableHighAccuracy: false, timeout: 4000, maximumAge: 300000 });
+    } catch (coarseErr) {
+      /* The coarse fix comes from wifi/cell positioning. A device that has
+         none answering — wifi off, a fresh phone, the Android emulator,
+         whose network provider never reports — times out (3) or says
+         unavailable (2) even though GPS would answer. Ask once more with
+         GPS before telling the person we can't find them. Denied (1) is
+         final: asking again can't change the answer. */
+      if (coarseErr?.code !== 2 && coarseErr?.code !== 3) throw coarseErr;
+      geoDebug(`[geo] coarse error code=${coarseErr.code}, retrying with GPS`);
+      pos = await ask({ enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
+    }
     state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     state.geoError = null;
     geoDebug('[geo] coarse success');

@@ -3993,7 +3993,23 @@ function mixHex(fromHex, toHex, amount) {
   return `#${chan(0)}${chan(2)}${chan(4)}`;
 }
 
-function venueTileUri(name, type, wide, showLetter = true) {
+/* Illustrated stand-ins for a venue with no photos yet (Kar's art,
+   assets/art/): one scene per type, used everywhere the drawn tile below
+   used to be — cards, the venue page header, the wheel, Your Vientiane.
+   Deliberately generic (a bar counter, a café table, a riverside market),
+   never a picture of any particular venue: it says "no photo yet", not
+   "this is the place". Types without art (restaurant) keep the tile. */
+const TYPE_COVER_ART = {
+  bar: 'assets/art/cover-bar.webp',
+  cafe: 'assets/art/cover-cafe.webp',
+  venue: 'assets/art/cover-market.webp',
+};
+
+// art = false: the drawn tile even where art exists — for the stand-in a
+// real photo is about to replace (collagePhotosHtml()'s lazy tiles), where
+// loading a picture only to swap it out would be a wasted request and a flash
+function venueTileUri(name, type, wide, showLetter = true, art = true) {
+  if (art && TYPE_COVER_ART[type]) return TYPE_COVER_ART[type];
   const letter = (name || '?').charAt(0).toUpperCase();
   const glyphKey = Object.hasOwn(TILE_GLYPHS, type) ? type : 'venue';
   // one neutral ink for all three types. This was --teal / --flame / --violet
@@ -4310,7 +4326,7 @@ function collagePhotosHtml(v, altName) {
     return `<div class="collage-photos"><div class="collage-tile collage-tile-big solo">
       <img src="${phBig}" alt="${esc(altName)}"></div></div>`;
   }
-  const phSmall = venueTileUri(v.short_name || v.name, v.type, false);
+  const phSmall = venueTileUri(v.short_name || v.name, v.type, false, true, false);
   const n = Math.min(photos.length, 3);
   const extra = photos.length - 3;
   const ring = `<span class="tile-loading">${loadingRing(24)}</span>`;
@@ -6266,7 +6282,7 @@ function renderHomeSheet() {
       const tonightPhoto = ev.photo || ((v.photos && v.photos.length) ? v.photos[0] : null);
       const media = tonightPhoto
         ? `<img class="big-thumb" src="${esc(cloudinaryUrl(tonightPhoto, 900))}" alt="" loading="lazy">`
-        : `<img class="big-thumb" src="${venueTileUri(v.short_name || v.name, 'venue', true)}" alt="" loading="lazy">`;
+        : `<img class="big-thumb" src="${venueTileUri(v.short_name || v.name, v.type, true)}" alt="" loading="lazy">`;
       // status+distance is already folded into this sub-line via venueLine()
       // (falls back to the area name with no location) — every card here
       // already had it before Pass 2, nothing to add. This card previously

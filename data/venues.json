@@ -33,7 +33,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "chokdee-cafe",
@@ -66,7 +67,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "sinouk-khemkhong",
@@ -100,7 +102,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "itecc-hall",
@@ -124,7 +127,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-15"
     },
     {
       "id": "go-dunk",
@@ -150,7 +154,8 @@
       "verified": true,
       "source": "Reopened after fire rebuild — confirmed by Kar, 2026-09-22; hours pending",
       "pin_status": "placed",
-      "logo": "v1790032689/godunkpf_d55cdz"
+      "logo": "v1790032689/godunkpf_d55cdz",
+      "updated": "2026-08-05"
     },
     {
       "id": "status-bar",
@@ -186,7 +191,8 @@
       "contact": {
         "phone": "+8562052366087",
         "phone_display": "020 5236 6087"
-      }
+      },
+      "updated": "2026-08-10"
     },
     {
       "id": "rustic-white",
@@ -218,7 +224,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "baron",
@@ -250,7 +257,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "mahasan",
@@ -276,7 +284,8 @@
       },
       "verified": true,
       "source": "Google Maps listing 2026-07-11, location confirmed in person",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "treekoff-watchane",
@@ -314,7 +323,8 @@
       "vibe": [
         "tucked-away",
         "for-coffee"
-      ]
+      ],
+      "updated": "2026-08-10"
     },
     {
       "id": "tree-town",
@@ -357,7 +367,8 @@
         "tucked-away",
         "settle-in"
       ],
-      "logo": "v1787658196/treetownlogo_ipayqw"
+      "logo": "v1787658196/treetownlogo_ipayqw",
+      "updated": "2026-08-25"
     },
     {
       "id": "common-grounds",
@@ -391,7 +402,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-11",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "drip-1920s",
@@ -431,7 +443,8 @@
         "tucked-away",
         "settle-in"
       ],
-      "logo": "v1787658602/drip1920logo_ltdtho"
+      "logo": "v1787658602/drip1920logo_ltdtho",
+      "updated": "2026-08-25"
     },
     {
       "id": "maomao-matcha",
@@ -474,7 +487,8 @@
       "vibe": [
         "for-coffee"
       ],
-      "logo": "v1787658199/maomaologo_if87kz"
+      "logo": "v1787658199/maomaologo_if87kz",
+      "updated": "2026-08-25"
     },
     {
       "id": "vte-night-market",
@@ -504,7 +518,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-12",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-10-27"
     },
     {
       "id": "night-street",
@@ -526,7 +541,8 @@
       },
       "verified": false,
       "source": "TripAdvisor reports 2026 + boardwalk coordinates estimated — confirm location and schedule in person",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-05"
     },
     {
       "id": "farsai-cafe",
@@ -570,7 +586,8 @@
         "under-trees",
         "settle-in"
       ],
-      "logo": "v1787658199/farsai_cafe_ko5ikm"
+      "logo": "v1787658199/farsai_cafe_ko5ikm",
+      "updated": "2026-08-25"
     },
     {
       "id": "corebeer",
@@ -604,7 +621,8 @@
       },
       "verified": true,
       "source": "Google Maps listing + FB events, 2026-07-22",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "parkson-laos",
@@ -636,7 +654,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-22",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-08-10"
     },
     {
       "id": "kokkok-mega-mall",
@@ -677,7 +696,8 @@
       "parking": {
         "note": "Three zones — motorbikes at B on the main road, cars A or C",
         "source": "venue parking map on Facebook"
-      }
+      },
+      "updated": "2026-08-10"
     },
     {
       "id": "madame-cocktail",
@@ -713,7 +733,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "tipsy-elephant",
@@ -749,7 +770,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "stellar-bar",
@@ -785,7 +807,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "blues-box",
@@ -819,7 +842,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "wind-west",
@@ -853,7 +877,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "seventh-heaven",
@@ -889,7 +914,8 @@
       },
       "verified": true,
       "source": "Google Maps listing, 2026-07-25",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-09-15"
     },
     {
       "id": "sathiti-cafe",
@@ -931,7 +957,8 @@
       "vibe": [
         "for-coffee",
         "settle-in"
-      ]
+      ],
+      "updated": "2026-08-10"
     },
     {
       "id": "anthophile",
@@ -977,7 +1004,8 @@
       "vibe": [
         "under-trees",
         "settle-in"
-      ]
+      ],
+      "updated": "2026-08-10"
     },
     {
       "id": "sunin-restaurant-cafe",
@@ -1031,7 +1059,8 @@
           "name": "Waffle",
           "price": 5500
         }
-      ]
+      ],
+      "updated": "2026-08-10"
     },
     {
       "id": "chocola-bar",
@@ -1077,7 +1106,8 @@
       "vibe": [
         "tucked-away"
       ],
-      "logo": "v1787658196/chocolalogo_xzigjy"
+      "logo": "v1787658196/chocolalogo_xzigjy",
+      "updated": "2026-08-25"
     },
     {
       "id": "moonlight-lounge",
@@ -1098,7 +1128,8 @@
       },
       "verified": false,
       "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-10-27"
     },
     {
       "id": "cocoon-bar",
@@ -1119,7 +1150,8 @@
       },
       "verified": false,
       "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-10-27"
     },
     {
       "id": "office-bar-tapas",
@@ -1140,7 +1172,546 @@
       },
       "verified": false,
       "source": "Coordinates supplied by Kar, 2026-10-25. Nothing else about this venue has been sourced yet.",
-      "pin_status": "placed"
+      "pin_status": "placed",
+      "updated": "2026-10-27"
+    },
+    {
+      "id": "khop-chai-deu",
+      "name": "Khop Chai Deu",
+      "short_name": "Khop Chai Deu",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9645955,
+      "lng": 102.607407,
+      "area": "54 Setthathirat Rd, Nam Phu",
+      "short": "Colonial house with a rooftop beer garden and live music",
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "10:00-23:30",
+        "tue": "10:00-23:30",
+        "wed": "10:00-23:30",
+        "thu": "10:00-23:30",
+        "fri": "10:00-23:30",
+        "sat": "10:00-23:30",
+        "sun": "10:00-23:30"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9645955,102.607407"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "gallery38",
+      "name": "Gallery38",
+      "short_name": "Gallery38",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9651317,
+      "lng": 102.606589,
+      "area": "Rue Manthatourath",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "19:00-24:00",
+        "tue": "19:00-24:00",
+        "wed": "19:00-24:00",
+        "thu": "19:00-24:00",
+        "fri": "19:00-24:00",
+        "sat": "19:00-24:00",
+        "sun": "19:00-24:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9651317,102.606589"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "360-eleven",
+      "name": "360° @ Eleven",
+      "short_name": "360° @ Eleven",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9675271,
+      "lng": 102.5853261,
+      "area": null,
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "17:30-24:00",
+        "tue": "17:30-24:00",
+        "wed": "17:30-24:00",
+        "thu": "17:30-24:00",
+        "fri": "17:30-24:00",
+        "sat": "17:30-24:00",
+        "sun": "17:30-24:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9675271,102.5853261"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "selene-sky-bar",
+      "name": "Selene Sky Bar",
+      "short_name": "Selene Sky Bar",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9728928,
+      "lng": 102.6226556,
+      "area": "Rue 23 Singha",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9728928,102.6226556"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "laodi-bar-mekong",
+      "name": "Laodi Bar",
+      "short_name": "Laodi Bar",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9672936,
+      "lng": 102.6018957,
+      "area": "Sihom",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "17:00-24:00",
+        "tue": "17:00-24:00",
+        "wed": "17:00-24:00",
+        "thu": "17:00-24:00",
+        "fri": "17:00-26:00",
+        "sat": "17:00-26:00",
+        "sun": "17:00-24:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9672936,102.6018957"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "tullys-irish-pub",
+      "name": "Tully's Pub and Restaurant",
+      "short_name": "Tully's Pub and Restaurant",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9577546,
+      "lng": 102.6505164,
+      "area": "That Luang lake",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "11:00-25:00",
+        "tue": "11:00-25:00",
+        "wed": "11:00-25:00",
+        "thu": "11:00-25:00",
+        "fri": "11:00-25:00",
+        "sat": "11:00-25:00",
+        "sun": "11:00-22:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9577546,102.6505164"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "berliner-garden",
+      "name": "Berliner Garden",
+      "short_name": "Berliner Garden",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9752662,
+      "lng": 102.622057,
+      "area": "Sibounheung",
+      "short": "Beer garden",
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": "11 am–2 pm and 5–9 pm, closed Sundays",
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9752662,102.622057"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "balance-beer",
+      "name": "Balance Beer",
+      "short_name": "Balance Beer",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.965824,
+      "lng": 102.6054754,
+      "area": "19 Rue Hengbounnoy",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.965824,102.6054754"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "crowne-plaza-garden",
+      "name": "The Garden (Crowne Plaza)",
+      "short_name": "The Garden",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9697134,
+      "lng": 102.5970561,
+      "area": "Crowne Plaza, 20 Samsenthai Rd",
+      "short": "Hotel garden bar with a DJ from 9 pm",
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "19:00-24:00",
+        "tue": "19:00-24:00",
+        "wed": "19:00-24:00",
+        "thu": "19:00-24:00",
+        "fri": "19:00-24:00",
+        "sat": "19:00-24:00",
+        "sun": "19:00-24:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9697134,102.5970561"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "phasalao-kitchen-bar",
+      "name": "Phasalao Restaurant",
+      "short_name": "Phasalao Restaurant",
+      "name_lo": null,
+      "type": "bar",
+      "lat": 17.9586643,
+      "lng": 102.6199167,
+      "area": "World Trade Center 5F, Sisattanak",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "17:00-27:00",
+        "tue": "17:00-27:00",
+        "wed": "17:00-27:00",
+        "thu": "17:00-27:00",
+        "fri": "17:00-27:00",
+        "sat": "17:00-27:00",
+        "sun": "17:00-27:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9586643,102.6199167"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "laminim-coffee",
+      "name": "Laminim Coffee",
+      "short_name": "Laminim Coffee",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9674712,
+      "lng": 102.6106863,
+      "area": "Sisaket, Chanthabuly",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "08:30-16:00",
+        "tue": "08:30-16:00",
+        "wed": "08:30-16:00",
+        "thu": "08:30-16:00",
+        "fri": null,
+        "sat": "08:30-17:00",
+        "sun": "08:30-17:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9674712,102.6106863"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "the-tamper-coffee",
+      "name": "The Tamper Coffee & Studio",
+      "short_name": "The Tamper Coffee & Studio",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9538966,
+      "lng": 102.6314101,
+      "area": "Saphanthong Neua",
+      "short": "Specialty coffee and studio",
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "07:00-18:00",
+        "tue": "07:00-18:00",
+        "wed": "07:00-18:00",
+        "thu": "07:00-18:00",
+        "fri": "07:00-18:00",
+        "sat": "08:00-17:00",
+        "sun": "08:00-17:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9538966,102.6314101"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "naked-espresso",
+      "name": "Naked Espresso Hasadee",
+      "short_name": "Naked Espresso Hasadee",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9665078,
+      "lng": 102.6136553,
+      "area": "Khun Bu Lom Rd",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "07:00-17:00",
+        "tue": "07:00-17:00",
+        "wed": "07:00-17:00",
+        "thu": "07:00-17:00",
+        "fri": "07:00-17:00",
+        "sat": "07:00-17:00",
+        "sun": null
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9665078,102.6136553"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "bluekoff-vientiane",
+      "name": "Bluekoff Vientiane",
+      "short_name": "Bluekoff Vientiane",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9564527,
+      "lng": 102.6435462,
+      "area": "Kamphengmeuang Rd, Saysettha",
+      "short": "Café in a renovated old villa",
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "08:00-18:00",
+        "tue": "08:00-18:00",
+        "wed": "08:00-18:00",
+        "thu": "08:00-18:00",
+        "fri": "08:00-18:00",
+        "sat": "08:00-18:00",
+        "sun": "08:00-18:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9564527,102.6435462"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "slow-coffee",
+      "name": "Slow Coffee",
+      "short_name": "Slow Coffee",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.966817,
+      "lng": 102.602886,
+      "area": "Lan Xang Ave",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "09:00-18:00",
+        "tue": "09:00-18:00",
+        "wed": "09:00-18:00",
+        "thu": "09:00-18:00",
+        "fri": "09:00-18:00",
+        "sat": "09:00-18:00",
+        "sun": "09:00-18:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.966817,102.602886"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "fill-coffee",
+      "name": "Fill Coffee",
+      "short_name": "Fill Coffee",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9786967,
+      "lng": 102.6251374,
+      "area": "Asean Rd, Chanthabouly",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "07:00-17:00",
+        "tue": "07:00-17:00",
+        "wed": "07:00-17:00",
+        "thu": "07:00-17:00",
+        "fri": "07:00-17:00",
+        "sat": "08:00-17:00",
+        "sun": "08:00-17:00"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9786967,102.6251374"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "dam-dam",
+      "name": "Dam Dam",
+      "short_name": "Dam Dam",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9644568,
+      "lng": 102.6030328,
+      "area": "Wat Chan alley",
+      "short": "Café on the grounds of Wat Chan",
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": null,
+        "tue": null,
+        "wed": null,
+        "thu": "09:02-17:09",
+        "fri": "10:00-17:09",
+        "sat": "15:02-17:09",
+        "sun": "10:02-17:09"
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9644568,102.6030328"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "caffeine",
+      "name": "Caffeine",
+      "short_name": "Caffeine",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9600972,
+      "lng": 102.6231656,
+      "area": "01 Dongpalan St",
+      "short": null,
+      "description": null,
+      "photos": [],
+      "hours": {
+        "mon": "08:00-17:00",
+        "tue": "08:00-17:00",
+        "wed": "08:00-17:00",
+        "thu": "08:00-17:00",
+        "fri": "08:00-17:00",
+        "sat": "08:00-17:00",
+        "sun": null
+      },
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9600972,102.6231656"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
+    },
+    {
+      "id": "noys-fruit-heaven",
+      "name": "Noy's Fruit Heaven",
+      "short_name": "Noy's Fruit Heaven",
+      "name_lo": null,
+      "type": "cafe",
+      "lat": 17.9667709,
+      "lng": 102.6058704,
+      "area": "Rue Hengbounnoy",
+      "short": "Fruit shakes, breakfasts and sandwiches",
+      "description": null,
+      "photos": [],
+      "hours": null,
+      "hours_note": null,
+      "links": {
+        "maps": "https://www.google.com/maps/dir/?api=1&destination=17.9667709,102.6058704"
+      },
+      "verified": false,
+      "source": "Google Maps listing, 2026-11-06",
+      "pin_status": "placed",
+      "updated": "2026-11-06"
     }
   ]
 }

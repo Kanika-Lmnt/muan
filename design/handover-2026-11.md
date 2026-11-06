@@ -266,3 +266,24 @@ learning guide.
 - Tested with a mocked Capacitor in Playwright: each back step, the
   minimise on Home, and the bar style following the theme toggle. On the
   website NATIVE is null and none of it runs.
+
+## 15. Top lists, "Can't decide?", When people go
+
+- **Top lists** (Home, with a Bars/Cafés switch; and at the top of each type
+  tab): up to 5 per type. Ordered by how many DIFFERENT people checked in
+  over the last 30 days (`people_30d` on /api/venues, 3+ people to count),
+  then Kar's picks from data/picks.json `top` (empty until Kar fills it).
+  Each row says which: "8 people this month" or "our pick". No Google or
+  other borrowed numbers (017's rule).
+- **Wheel**: the Spin tile is gone from the category row (it read as a
+  prize game). Home has a "Can't decide? Let Phai pick" card that names how
+  many open places it chooses from (hidden with fewer than 2). The type
+  tabs keep their Spin button.
+- **When people go** on venue pages: check-ins by weekday over 90 days,
+  plus the busiest three-hour stretch, from the new GET /api/venue-stats.
+  It's only drawn with 10+ check-ins from 5+ different people. Below that
+  nothing shows: a thin chart would be noise, and with one or two regulars
+  it would describe a person's habits.
+- The cafés tab's "Recommended" switch is renamed "Photos". It was always
+  "cafés with 2+ photos", which isn't a recommendation.
+- TODO(lao): ອັນດັບ (Top lists), ອັນດັບ + type, ເລືອກບໍ່ຖືກບໍ?

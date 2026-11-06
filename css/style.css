@@ -4441,3 +4441,73 @@ textarea:focus-visible,
   background: var(--ink3); color: var(--secondary);
   font-size: 14px; line-height: 1.5; text-align: center;
 }
+
+/* ---------- "Can't decide?" (decideCardHtml() in js/app.js) ----------
+   The wheel's way in from Home. A quiet card with Phai, not a tile in the
+   category row, so it reads as help choosing rather than a prize game. */
+.decide-card {
+  display: flex; align-items: center; gap: 12px; margin: 22px 0 6px;
+  padding: 14px 14px 14px 10px; border-radius: 18px;
+  background-image: var(--card-fill); box-shadow: var(--card-edge), var(--card-lift);
+}
+.decide-phai { width: 54px; height: auto; flex-shrink: 0; }
+.decide-body { flex: 1; min-width: 0; }
+.decide-lo { font-size: 17px; font-weight: 700; color: var(--bone); line-height: 1.3; }
+.decide-en { font-size: 13px; font-weight: 600; color: var(--bone); }
+.decide-sub { font-size: 12.5px; line-height: 1.4; color: var(--secondary); margin-top: 3px; }
+.decide-go {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 14px; border-radius: 999px; border: none;
+  background: var(--flame); color: var(--on-flame);
+  font-family: var(--font); font-size: 13.5px; font-weight: 700; cursor: pointer;
+}
+.decide-go:active { opacity: .8; }
+@media (max-width: 360px) {
+  .decide-card { flex-wrap: wrap; }
+  .decide-go { width: 100%; justify-content: center; }
+}
+
+/* ---------- Top lists (homeTopListsHtml()/typeTopListHtml()) ----------
+   Numbered rows: the rank is the point, so it gets the big type; the line
+   under the name says WHY it's there (people this month, or our pick). */
+.top-seg { margin-bottom: 10px; }
+.top-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.top-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 8px 12px 8px 8px; border: none; border-radius: 16px; text-align: left;
+  background-image: var(--card-fill); box-shadow: var(--card-edge), var(--card-lift);
+  font-family: var(--font); color: var(--bone); cursor: pointer;
+}
+.top-row:active { opacity: .85; }
+.top-rank {
+  width: 26px; flex-shrink: 0; text-align: center;
+  font-size: 22px; font-weight: 700; color: var(--flame-text);
+}
+.top-thumb { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; overflow: hidden; background: var(--ink3); }
+.top-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.top-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.top-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-why { font-size: 12px; color: var(--secondary); }
+.top-why.counted { color: var(--bone); font-weight: 600; }
+.top-hours { font-size: 12px; color: var(--secondary); }
+.top-hours.open { color: var(--teal); }
+.top-row.closed .top-thumb img { opacity: .55; }
+.top-note { font-size: 10.5px; color: var(--secondary); margin-top: 8px; }
+
+/* ---------- "When people go" (venueBusyHtml()) ----------
+   Seven bars, Monday first, today's bar in coral. Only ever drawn from
+   enough real check-ins (functions/api/venue-stats.js). */
+.busy-card {
+  margin-top: 16px; padding: 14px 16px; border-radius: 16px;
+  background-image: var(--card-fill); box-shadow: var(--card-edge);
+}
+.busy-h { font-size: 14px; font-weight: 700; color: var(--bone); }
+.busy-h span { font-weight: 500; color: var(--secondary); }
+.busy-bars { display: flex; align-items: flex-end; gap: 8px; height: 92px; margin-top: 12px; }
+.busy-col { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; }
+.busy-track { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.busy-bar { width: 100%; max-width: 30px; border-radius: 6px 6px 3px 3px; background: var(--ink4); }
+.busy-col.today .busy-bar { background: var(--flame); }
+.busy-day { font-size: 11px; color: var(--secondary); }
+.busy-col.today .busy-day { color: var(--bone); font-weight: 700; }
+.busy-sub { font-size: 12px; line-height: 1.45; color: var(--secondary); margin-top: 10px; }

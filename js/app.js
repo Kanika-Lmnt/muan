@@ -5593,11 +5593,9 @@ const CAT_ICONS = {
 };
 
 // one rounded tile per filter the chip row offers (Bars, Cafes, Events,
-// Restaurants once any exist), then the wheel. The wheel tile spins every
-// open bar, café and restaurant (see wheelCandidates('all')) — it is also
-// the only way into the wheel from the All tab and on desktop, where the
-// type-list Spin button is hidden.
-// TODO(lao): 'ສຸ່ມເລືອກ' for the wheel tile.
+// Restaurants once any exist). The wheel used to be a fifth tile here, but
+// in a row of categories it read as a prize game, not a way to choose a
+// place; it lives in decideCardHtml() on Home and on each type tab now.
 function homeCategoriesHtml() {
   const keys = FILTER_ORDER.filter(k => k !== 'all' && !chipBarEl.querySelector(`.chip[data-filter="${k}"]`)?.hidden);
   const label = k => k === 'event'
@@ -5610,7 +5608,153 @@ function homeCategoriesHtml() {
   return `<div class="home-cats">${keys.map(k => {
     const l = label(k);
     return tile(`data-cat="${k}"`, CAT_ICONS[k] || CAT_ICONS.event, l.lo, l.en);
-  }).join('')}${tile('data-wheel aria-label="Spin the wheel"', CAT_ICONS.wheel, 'ສຸ່ມເລືອກ', 'Spin')}</div>`;
+  }).join('')}</div>`;
+}
+
+/* "Can't decide?" — the wheel's way in from Home (and the only one on
+   desktop, where the type tabs' Spin button is hidden). Worded as help
+   choosing where to go, with the number of places it will choose from, so
+   it can't be mistaken for a spin-to-win. Hidden when fewer than two places
+   are open: a wheel with one slice isn't a choice. TODO(lao):
+   'ເລືອກບໍ່ຖືກບໍ?' and 'ໃຫ້ໄຟເລືອກ'. */
+function decideCardHtml() {
+  const n = wheelCandidates('all').length;
+  if (n < 2) return '';
+  return `<div class="decide-card">
+    <img class="decide-phai" src="assets/mascot/phai-wink.svg" alt="" width="64" height="77" draggable="false">
+    <div class="decide-body">
+      <div class="decide-lo lao">ເລືອກບໍ່ຖືກບໍ?</div>
+      <div class="decide-en">Can't decide?</div>
+      <div class="decide-sub">Phai picks one of the ${n} places open right now.</div>
+    </div>
+    <button type="button" class="decide-go" data-wheel>
+      ${icoSurprise(18)}<span>Let Phai pick</span>
+    </button>
+  </div>`;
+}
+
+/* ---------- Top lists ----------
+   "Which bars are good?" answered up front, per type. The order comes from
+   real check-ins once a place has enough of them — DIFFERENT people in the
+   last 30 days (/api/venues people_30d), so one regular can't carry a venue
+   — and until then from Kar's own picks (data/picks.json "top"). Each row
+   says which it is ("12 people this month" / "our pick"), so a pick is
+   never presented as a count. No Google or other borrowed numbers (see
+   migrations/017_why_rating.sql). A type with neither has no list at all. */
+const TOP_MIN_PEOPLE = 3;
+const TOP_SIZE = 5;
+const TOP_TYPES = ['bar', 'cafe', 'restaurant'];
+
+function topListFor(type) {
+  const live = state.venues.filter(v => v.type === type && v.pin_status !== 'pending');
+  const counted = live.filter(v => (v.people_30d || 0) >= TOP_MIN_PEOPLE)
+    .sort((a, b) => b.people_30d - a.people_30d);
+  const seen = new Set(counted.map(v => v.id));
+  const picks = (state.picks?.top?.[type] || []).map(venueById)
+    .filter(v => v && v.type === type && v.pin_status !== 'pending' && !seen.has(v.id));
+  return [...counted.map(v => ({ v, by: 'visits' })), ...picks.map(v => ({ v, by: 'pick' }))]
+    .slice(0, TOP_SIZE);
+}
+
+function topRowHtml({ v, by }, i) {
+  const st = openStatus(v);
+  const d = distanceTo(v);
+  const thumb = v.photos?.length
+    ? `<img src="${esc(cloudinaryUrl(v.photos[0], 160))}" alt="" loading="lazy">`
+    : `<img src="${venueTileUri(v.short_name || v.name, v.type, false)}" alt="" loading="lazy">`;
+  const why = by === 'visits'
+    ? `${plural(v.people_30d, 'person', 'people')} this month`
+    : 'our pick';
+  return `<button type="button" class="top-row${st.open ? '' : ' closed'}" data-open-venue="${esc(v.id)}">
+    <span class="top-rank">${i + 1}</span>
+    <span class="top-thumb">${thumb}</span>
+    <span class="top-body">
+      <span class="top-name">${esc(v.short_name || v.name)}</span>
+      <span class="top-why${by === 'visits' ? ' counted' : ''}">${why}</span>
+      <span class="top-hours${st.open ? ' open' : ''}">${esc(st.label)}${d != null ? ` · ${fmtDist(d)}` : ''}</span>
+    </span>
+  </button>`;
+}
+
+function topNoteHtml(lists) {
+  const anyCounted = lists.some(l => l.some(x => x.by === 'visits'));
+  return `<div class="top-note">${anyCounted
+    ? 'Ranked by how many people checked in this month, then our picks.'
+    : 'Our picks for now. As people check in, real visits take over the order.'}</div>`;
+}
+
+// Home (All): one list at a time, with a switch between the types that
+// have one. TODO(lao): 'ອັນດັບ' (and the type tabs' 'ອັນດັບ' + type).
+function homeTopListsHtml(secH) {
+  const types = TOP_TYPES.filter(t => topListFor(t).length);
+  if (!types.length) return '';
+  const cur = types.includes(state.topType) ? state.topType : types[0];
+  const list = topListFor(cur);
+  const seg = types.length > 1
+    ? `<div class="seg top-seg" role="tablist">${types.map(t => `
+        <button class="seg-btn ${t === cur ? 'on' : ''}" data-top-type="${t}" role="tab" aria-selected="${t === cur}">${esc(VENUE_TYPE_META[t].label)}</button>`).join('')}
+      </div>`
+    : '';
+  return secH('Top lists · ອັນດັບ') + seg +
+    `<div class="top-list">${list.map(topRowHtml).join('')}</div>` + topNoteHtml([list]);
+}
+
+// a type tab (Bars, Cafés…): its own list above the full one
+function typeTopListHtml(type, secH) {
+  const list = topListFor(type);
+  if (!list.length) return '';
+  const meta = VENUE_TYPE_META[type];
+  return secH(`Top ${meta.label.toLowerCase()} · ອັນດັບ${meta.label_lo}`) +
+    `<div class="top-list">${list.map(topRowHtml).join('')}</div>` + topNoteHtml([list]);
+}
+
+/* ---------- "When people go" (venue page) ----------
+   From /api/venue-stats: real check-ins over 90 days by weekday, in
+   Vientiane time. The server only sends numbers once a venue has enough
+   check-ins from enough different people; otherwise nothing is drawn (no
+   "not enough data" box). */
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function busyPeakHours(byHour) {
+  // the busiest three-hour stretch, which reads better than one hour
+  let best = 0, at = 0;
+  for (let h = 0; h < 24; h++) {
+    const sum = byHour[h] + byHour[(h + 1) % 24] + byHour[(h + 2) % 24];
+    if (sum > best) { best = sum; at = h; }
+  }
+  return best ? `${fmtTime(at * 60)}–${fmtTime(((at + 3) % 24) * 60)}` : '';
+}
+
+function venueBusyHtml(stats) {
+  if (!stats?.enough || !Array.isArray(stats.by_day)) return '';
+  const max = Math.max(...stats.by_day, 1);
+  const today = (new Date().getDay() + 6) % 7;
+  const top = Math.max(...stats.by_day);
+  const busiest = DAY_SHORT.filter((_, i) => stats.by_day[i] === top);
+  const hours = busyPeakHours(stats.by_hour || []);
+  return `<div class="busy-card">
+    <div class="busy-h">When people go <span>· last 3 months</span></div>
+    <div class="busy-bars" role="img" aria-label="Busiest on ${busiest.join(' and ')}">
+      ${stats.by_day.map((n, i) => `<div class="busy-col${i === today ? ' today' : ''}">
+        <span class="busy-track"><span class="busy-bar" style="height:${Math.max(6, Math.round(n / max * 100))}%"></span></span>
+        <span class="busy-day">${DAY_SHORT[i]}</span>
+      </div>`).join('')}
+    </div>
+    <div class="busy-sub">Busiest on ${busiest.join(' and ')}${hours ? `, mostly ${hours}` : ''} · check-ins by ${plural(stats.people, 'person', 'people')}</div>
+  </div>`;
+}
+
+async function loadVenueBusy(v) {
+  const box = document.getElementById('vdBusy');
+  if (!box) return;
+  try {
+    const r = await apiFetch(`/api/venue-stats?id=${encodeURIComponent(v.id)}`);
+    if (!r.ok) return;
+    const stats = await r.json();
+    // still on the same venue?
+    if (state.sheetView?.type !== 'venue' || state.sheetView.venueId !== v.id) return;
+    box.innerHTML = venueBusyHtml(stats);
+  } catch (e) { /* no chart is the right answer when there's no data */ }
 }
 
 /* ---------- Saved places ----------
@@ -5948,13 +6092,14 @@ function renderHomeSheet() {
       ${wheelButtonHtml(f)}
       <div id="chipSentinel"></div>
       <div id="chipSlot"></div>`;
+    html += typeTopListHtml(f, secH);
     html += secH(label);
 
     const cafeTab = state.cafeTab || 'recommended';
     if (f === 'cafe') {
       html += `
         <div class="seg" role="tablist">
-          <button class="seg-btn ${cafeTab === 'recommended' ? 'on' : ''}" data-cafe-tab="recommended" role="tab" aria-selected="${cafeTab === 'recommended'}">Recommended</button>
+          <button class="seg-btn ${cafeTab === 'recommended' ? 'on' : ''}" data-cafe-tab="recommended" role="tab" aria-selected="${cafeTab === 'recommended'}">Photos</button>
           <button class="seg-btn ${cafeTab === 'all' ? 'on' : ''}" data-cafe-tab="all" role="tab" aria-selected="${cafeTab === 'all'}">All cafés</button>
         </div>`;
     }
@@ -6084,6 +6229,12 @@ function renderHomeSheet() {
     html += secH('On fire · ໄຟລຸກ', esc(state.picks?.note_en)) +
       (railed ? `<div class="fire-rail">${fireCards}</div>` : fireCards) +
       `<div style="font-size:10.5px;color:var(--secondary);margin-top:8px;">picked by us, not ranked by check-ins</div>`;
+  }
+
+  if (f === 'all' && !state.homeQuery) {
+    const top = homeTopListsHtml(secH);
+    if (top) { rendered = true; html += top; }
+    html += decideCardHtml();
   }
 
   /* What's happening — the mockup's second section, on All only: the
@@ -6693,6 +6844,7 @@ function openVenue(id) {
 
   html += `
     <div class="vd-details">${detail.join('')}</div>
+    <div id="vdBusy"></div>
     ${v.verified ? '' : '<div class="hint">details unconfirmed — hours may differ</div>'}
     <div id="routeAttribution"></div>`;
 
@@ -6701,6 +6853,7 @@ function openVenue(id) {
   // still-rendering old content's scrollTop assignment gets overwritten
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.scrollTop = 0;
+  loadVenueBusy(v);
   // mobile back-button support: a fresh open pushes a history entry so the
   // hardware/browser back button can pop it and close the venue (see the
   // popstate listener in boot()) — except on a deep link (?v=id) load, where
@@ -7526,6 +7679,14 @@ function setSheet(html) {
   inner.classList.add('anim');
   inner.querySelectorAll('[data-open-venue]').forEach(el =>
     el.addEventListener('click', () => openVenue(el.dataset.openVenue)));
+  inner.querySelectorAll('[data-top-type]').forEach(el =>
+    el.addEventListener('click', () => {
+      state.topType = el.dataset.topType;
+      const sh = document.getElementById('sheet');
+      const y = sh ? sh.scrollTop : 0;
+      renderHomeSheet();
+      if (sh) sh.scrollTop = y;
+    }));
   inner.querySelectorAll('[data-cafe-tab]').forEach(el =>
     el.addEventListener('click', () => {
       state.cafeTab = el.dataset.cafeTab;

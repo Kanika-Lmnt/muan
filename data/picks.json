@@ -6,5 +6,11 @@
   "venue_ids": ["status-bar", "kong-view"],
   "busy_venue_ids": ["parkson-laos", "itecc-hall", "vte-night-market", "kokkok-mega-mall"],
   "busy_note_en": "where we think the crowds are",
-  "busy_note_lo": "ບ່ອນທີ່ຄົນມັກໄປ"
+  "busy_note_lo": "ບ່ອນທີ່ຄົນມັກໄປ",
+  "top": {
+    "_notes": "Kar's own top 5 per type, best first (venue ids). Shown on the Top lists as \"our pick\" until a venue has check-ins from enough different people; then real visits take over the order (js/app.js topListFor()).",
+    "bar": [],
+    "cafe": [],
+    "restaurant": []
+  }
 }

@@ -4511,3 +4511,45 @@ textarea:focus-visible,
 .busy-day { font-size: 11px; color: var(--secondary); }
 .busy-col.today .busy-day { color: var(--bone); font-weight: 700; }
 .busy-sub { font-size: 12px; line-height: 1.45; color: var(--secondary); margin-top: 10px; }
+
+/* ---------- the wheel's payoff (revealWheelPick() in js/app.js) ----------
+   On landing: the winning slice pulses, confetti over the dial, the buttons
+   step back. Then the venue page opens with Phai's banner, the hero photo
+   settling in, and a second confetti burst over the whole screen. */
+.wheel-slice-win { transform-box: fill-box; transform-origin: center; animation: wheel-win .5s ease-in-out 3; }
+@keyframes wheel-win { 50% { opacity: .55; } }
+.wheel-confetti { position: absolute; inset: -20%; z-index: 4; pointer-events: none; }
+.wheel-confetti svg, .pick-confetti svg { display: block; width: 100%; height: 100%; }
+.wheel-actions-out { opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+.wheel-phai img { transition: transform .3s cubic-bezier(.3,1.6,.5,1); }
+
+.pick-confetti { position: fixed; inset: 0; z-index: 900; pointer-events: none; }
+
+.pick-banner {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  margin: 14px 0 4px; padding: 10px 10px 10px 8px; border-radius: 18px;
+  background: var(--wash-flame); color: var(--bone);
+  box-shadow: inset 0 0 0 1.5px var(--flame);
+  animation: pick-in .55s .15s cubic-bezier(.3,1.4,.5,1) both;
+}
+.pick-phai { width: 46px; height: auto; flex-shrink: 0; margin-top: -18px; filter: drop-shadow(0 4px 8px rgba(0,0,0,.2)); }
+.pick-text { flex: 1; min-width: 0; }
+.pick-lo { font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--flame-text); }
+.pick-en { font-size: 12.5px; font-weight: 600; color: var(--bone); }
+.pick-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.pick-btn {
+  min-height: 40px; padding: 0 12px; border-radius: 999px; border: none;
+  background: var(--ink3); color: var(--bone);
+  font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pick-btn-share { width: 40px; padding: 0; }
+.pick-btn:active { background: var(--ink4); }
+@keyframes pick-in { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
+
+.vd-hero-picked { animation: hero-settle .9s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes hero-settle { from { transform: scale(1.08); filter: brightness(1.25); } to { transform: none; filter: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-slice-win, .pick-banner, .vd-hero-picked { animation: none; }
+}

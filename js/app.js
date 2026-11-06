@@ -245,6 +245,7 @@ function leaveVenue(screen, viaPopstate) {
   // while a venue happens to be open — only the latter counts as a "fresh"
   // Map arrival for maybeRecenterMap()
   const isReturnToSameScreen = screen === state.screenBeforeVenue;
+  state.wheelPick = null;
   closeLightbox();  // a photo viewer left open over a venue survives every other exit path here — close it too
   stopTracking();
   state.selectedId = null; if (state.map) updateSelection();
@@ -3768,6 +3769,10 @@ function spinWheel() {
     if (winnerClosed) ov.querySelector(`[data-slice="${CSS.escape(winner.id)}"]`)?.classList.add('wheel-slice-closed');
     const res = ov.querySelector('.wheel-result');
     if (res) res.innerHTML = winnerClosed ? wheelClosedResultHtml(winner) : wheelResultCardHtml(winner);
+    if (!winnerClosed) {
+      revealWheelPick(ov, winner);
+      return;
+    }
     if (btn) {
       btn.disabled = false;
       // a shared wheel has exactly one answer — that is the feature, so there
@@ -3797,10 +3802,88 @@ function spinWheel() {
    ride along and each recipient drops them with the usual note. seed is the
    one already used here, so the sharer and every recipient see the same
    answer — including the sharer, who may have spun before sharing. */
+/* The payoff. The dial has stopped on an open place: the winning slice
+   pulses, the phone buzzes, confetti goes off over the wheel — and then,
+   rather than a small card to tap, the wheel steps aside for the place's
+   own page, with Phai's "picked this one" banner on top (pickBannerHtml())
+   and a second burst of confetti over it. A closed winner gets none of
+   this (see the closed branch in spinWheel()). */
+const PICK_REVEAL_MS = 1300;
+
+function revealWheelPick(ov, winner) {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ov.querySelector(`[data-slice="${CSS.escape(winner.id)}"]`)?.classList.add('wheel-slice-win');
+  ov.querySelector('.wheel-actions')?.classList.add('wheel-actions-out');
+  try { navigator.vibrate?.([30, 50, 90]); } catch (e) {}
+  const stage = ov.querySelector('.wheel-stage');
+  if (stage && !reduced) {
+    const box = document.createElement('div');
+    box.className = 'wheel-confetti';
+    stage.appendChild(box);
+    confettiSvg().then(html => playOnceInto(box, html, 2200));
+  }
+  const { pool, seed, shared } = wheelPop;
+  const pick = { id: winner.id, ids: pool.map(v => v.id), seed, shared, filter: state.filter };
+  setTimeout(() => {
+    if (!wheelPop || wheelPop.ov !== ov) return;   // closed during the pause
+    closeWheel();
+    state.wheelPick = pick;
+    openVenue(winner.id);
+    if (!reduced) {
+      const burst = document.createElement('div');
+      burst.className = 'pick-confetti';
+      document.body.appendChild(burst);
+      confettiSvg().then(html => playOnceInto(burst, html, 3000));
+      setTimeout(() => burst.remove(), 3100);
+    }
+  }, reduced ? 400 : PICK_REVEAL_MS);
+}
+
+// the top of a venue page that the wheel just picked. TODO(lao):
+// 'ໄຟເລືອກໃຫ້ແລ້ວ!' ("Phai picked it for you!").
+function pickBannerHtml(v) {
+  const p = state.wheelPick;
+  if (!p || p.id !== v.id) return '';
+  return `<div class="pick-banner" role="status">
+    <img class="pick-phai" src="assets/mascot/phai-delighted.svg" alt="" width="200" height="240" draggable="false">
+    <div class="pick-text">
+      <div class="pick-lo lao">ໄຟເລືອກໃຫ້ແລ້ວ!</div>
+      <div class="pick-en">Phai picked this one</div>
+    </div>
+    <div class="pick-actions">
+      ${p.shared ? '' : '<button type="button" class="pick-btn" data-pick-again>Spin again</button>'}
+      <button type="button" class="pick-btn pick-btn-share" data-pick-share aria-label="Share the result">${icoShare(16)}</button>
+    </div>
+  </div>`;
+}
+
+function bindPickBanner() {
+  const p = state.wheelPick;
+  if (!p) return;
+  document.querySelector('[data-pick-again]')?.addEventListener('click', () => {
+    state.wheelPick = null;
+    openWheel({ filter: p.filter });
+  });
+  document.querySelector('[data-pick-share]')?.addEventListener('click', () => {
+    const v = venueById(p.id);
+    const name = v ? (v.short_name || v.name) : '';
+    return shareOrCopy({
+      title: 'Paisaidee — the wheel picked',
+      text: `ໄຟເລືອກ ${name} ໃຫ້ແລ້ວ!\nThe wheel picked ${name}. Same wheel, same answer:`,
+      url: wheelShareUrl(p.ids, p.seed),
+      copied: 'Link copied — paste it to the group',
+    });
+  });
+}
+
+function wheelShareUrl(ids, seed) {
+  return `${SITE_ORIGIN}/?wheel=${ids.map(encodeURIComponent).join(',')}&seed=${seed}`;
+}
+
 function shareWheel() {
   if (!wheelPop) return;
   const { pool, seed } = wheelPop;
-  const url = `${SITE_ORIGIN}/?wheel=${pool.map(v => encodeURIComponent(v.id)).join(',')}&seed=${seed}`;
+  const url = wheelShareUrl(pool.map(v => v.id), seed);
   // TODO(lao): "ເລືອກບ່ອນໃດດີ?" is the phrasing given in the task, reused
   // here and in the overlay title and functions/index.js's og block so the
   // link, the preview and the page all say the same thing. Not yet checked
@@ -6603,6 +6686,8 @@ function openVenue(id) {
   if (typeof edBlocksLeave === 'function' && edBlocksLeave(() => openVenue(id))) return;
   const v = venueById(id);
   if (!v) return;
+  // the wheel's banner belongs to the venue it picked, nowhere else
+  if (state.wheelPick && state.wheelPick.id !== id) state.wheelPick = null;
   // the wheel floats over everything (document.body, like the lightbox), so
   // any route into a venue has to take it down — not just the result card's
   // own handler. A map pin is tappable with the wheel open on desktop.
@@ -6824,9 +6909,11 @@ function openVenue(id) {
       ? `<div class="vd-head vd-head-above">${logoHtml}<div class="vd-headtext">${titleHtml}${metaHtml}</div></div>${heroHtml}`
       : `${heroHtml}<div class="vd-head vd-head-overlap">${logoHtml}<div class="vd-headtext">${titleHtml}${metaHtml}</div></div>`;
 
+  const picked = state.wheelPick?.id === v.id;
   let html = `
     <span data-venue-detail hidden></span>
-    ${headHtml}
+    ${picked ? headHtml.replace('class="vd-hero', 'class="vd-hero vd-hero-picked') : headHtml}
+    ${pickBannerHtml(v)}
     ${ratingLineHtml(v, 'vd-rating')}
     ${vibes.length ? `<div class="vd-vibes">${vibes.map(t => `<span class="vd-vibe">${esc(t.label)}</span>`).join('')}</div>` : ''}
     ${actionsHtml}
@@ -6854,6 +6941,7 @@ function openVenue(id) {
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.scrollTop = 0;
   loadVenueBusy(v);
+  bindPickBanner();
   // mobile back-button support: a fresh open pushes a history entry so the
   // hardware/browser back button can pop it and close the venue (see the
   // popstate listener in boot()) — except on a deep link (?v=id) load, where

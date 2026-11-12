@@ -3093,12 +3093,11 @@ body {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(20,18,21,.55); color: #F5F1E8; font-size: 20px; font-weight: 700;
 }
-/* centred on the monogram while loadCollageCardPhotos() swaps a tile from
-   its monogram src to the real photo — see the .is-loading toggle in
+/* a skeleton shimmer over the tile while loadCollageCardPhotos() swaps it
+   from its monogram src to the real photo (was a spinning ring) — see the .is-loading toggle in
    watchImgLoad()/loadCollageCardPhotos() in js/app.js */
 .tile-loading {
-  position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-  color: var(--flame); pointer-events: none;
+  position: absolute; inset: 0; display: none; pointer-events: none;
 }
 .collage-tile.is-loading .tile-loading { display: flex; }
 
@@ -4636,3 +4635,158 @@ textarea:focus-visible,
 }
 .top-tally { font-size: 12.5px; color: var(--bone); margin-top: 10px; }
 .top-tally b { color: var(--flame-text); }
+
+/* ---------- "How was it?" (askHowWasIt() in js/app.js) ----------
+   Reuses the wheel's bottom sheet (.wheel-pop/.wheel-sheet), so it slides
+   up the same way and closes the same way. */
+.rx-body { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.rx-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  min-height: 60px; padding: 10px 18px; border-radius: 16px; border: none; cursor: pointer;
+  background: var(--ink3); color: var(--bone); font-family: var(--font); text-align: left;
+}
+.rx-btn .lao { font-size: 17px; font-weight: 700; }
+.rx-btn span:last-child { font-size: 13px; font-weight: 600; color: var(--secondary); }
+.rx-btn.rx-loved { background: var(--wash-flame); box-shadow: inset 0 0 0 1.5px var(--flame); }
+.rx-btn.rx-loved .lao { color: var(--flame-text); }
+.rx-btn:active { transform: scale(.98); }
+.rx-skip {
+  align-self: center; margin-top: 4px; min-height: 40px; padding: 0 14px; border: none; background: none;
+  color: var(--secondary); font-family: var(--font); font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.rx-vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.rx-or { font-size: 12px; font-weight: 700; color: var(--secondary); }
+.rx-card {
+  display: flex; flex-direction: column; gap: 8px; padding: 0 0 10px; border: none; border-radius: 16px; overflow: hidden;
+  background-image: var(--card-fill); box-shadow: var(--card-edge), var(--card-lift); cursor: pointer;
+  font-family: var(--font); color: var(--bone); font-size: 14px; font-weight: 700;
+}
+.rx-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.rx-card span { padding: 0 10px; text-align: center; }
+.rx-card:active { box-shadow: inset 0 0 0 2px var(--flame); }
+.rx-vs + .rx-skip { display: block; margin: 0 auto; }
+
+/* the venue page's own line: what you thought, your rank */
+.vd-myrx { margin-top: 10px; font-size: 13.5px; color: var(--secondary); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.vd-myrx b { color: var(--bone); }
+.vd-myrx-change {
+  margin-left: 6px; padding: 2px 10px; min-height: 28px; border-radius: 999px; border: none;
+  background: var(--ink3); color: var(--bone); font-family: var(--font); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+button.vd-myrx-ask {
+  border: none; background: none; padding: 0; min-height: 32px; cursor: pointer;
+  font-family: var(--font); font-weight: 700; color: var(--flame-text);
+}
+
+/* Your rankings (You) */
+.rk-type { font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--secondary); margin: 12px 0 4px; }
+.rk-type:first-of-type { margin-top: 0; }
+.rk-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 0; border: none; background: none;
+  font-family: var(--font); color: var(--bone); cursor: pointer; text-align: left;
+}
+.rk-row + .rk-row { border-top: 1px solid var(--ink4); }
+.rk-n { width: 20px; font-size: 17px; font-weight: 700; color: var(--flame-text); text-align: center; }
+.rk-name { flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk-rx { font-size: 12px; color: var(--secondary); }
+
+/* the monthly challenge */
+.fl-card-challenge { box-shadow: var(--card-edge), var(--card-lift), inset 0 0 0 1.5px var(--gold); }
+.fl-card-challenge.done { box-shadow: var(--card-edge), var(--card-lift); }
+.ch-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ch-label { font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--secondary); }
+.ch-reward { font-size: 12px; font-weight: 700; color: var(--gold); padding: 3px 10px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--gold); }
+.fl-card-challenge.done .ch-reward { color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
+.ch-title { font-size: 17px; font-weight: 700; color: var(--bone); margin-top: 8px; }
+.ch-title-lo { font-size: 14px; color: var(--secondary); margin-top: 1px; }
+.ch-sub { font-size: 12.5px; color: var(--secondary); }
+.fl-card-challenge .fl-bar > span { background: var(--gold); }
+
+/* the check-in celebration: Phai, and the challenge when one finishes */
+.cel-phai { width: 92px; height: auto; display: block; margin: 0 auto; font-size: 0; }
+.cel-challenge {
+  margin: 4px 0 10px; padding: 10px 12px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--gold);
+  font-size: 13px; font-weight: 600; color: var(--bone); display: flex; flex-direction: column; gap: 2px;
+}
+.cel-challenge b { color: var(--gold); }
+.cel-challenge span { font-size: 12px; font-weight: 500; color: var(--secondary); }
+
+/* ---------- themed lists (homeThemesHtml()) ---------- */
+.theme-rail {
+  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+  margin: 4px -16px 0; padding: 4px 16px 8px; scroll-padding-inline: 16px;
+}
+.theme-rail::-webkit-scrollbar { display: none; }
+.theme-card {
+  flex: 0 0 210px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 4px;
+  padding: 0 0 12px; border: none; border-radius: 16px; overflow: hidden; text-align: left; cursor: pointer;
+  background-image: var(--card-fill); box-shadow: var(--card-edge), var(--card-lift); font-family: var(--font); color: var(--bone);
+}
+.theme-pics { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; height: 110px; margin-bottom: 6px; }
+.theme-pics img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.theme-pics img:first-child { grid-row: 1 / 3; }
+.theme-pics img:only-child { grid-column: 1 / 3; }
+.theme-title { padding: 0 12px; font-size: 15px; font-weight: 700; }
+.theme-sub { padding: 0 12px; font-size: 12px; color: var(--secondary); }
+.theme-card:active { opacity: .85; }
+@media (min-width: 768px) {
+  .theme-rail { margin: 4px 0 0; padding: 4px 0 8px; flex-wrap: wrap; overflow: visible; }
+  .theme-card { flex-basis: calc(50% - 6px); }
+}
+
+/* ---------- places in view (updateMapPeek()) — phones, Map tab ---------- */
+.map-peek { display: none; }
+@media (max-width: 767px) {
+  #app[data-screen="map"]:not(.sheet-detail) .map-peek:not([hidden]) {
+    display: flex; gap: 10px; position: fixed; z-index: 15;
+    left: 0; right: 0; bottom: calc(var(--nav-space) + 6px);
+    padding: 4px 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+    scroll-padding-inline: 12px;
+  }
+  .map-peek::-webkit-scrollbar { display: none; }
+  /* the map credit (a licence condition) stays clear of the row */
+  #app[data-screen="map"].has-peek .maplibregl-ctrl-bottom-right { bottom: calc(var(--nav-space) + 96px); }
+}
+.peek-card {
+  flex: 0 0 auto; width: 220px; scroll-snap-align: start; display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px 6px 6px; border: none; border-radius: 16px; cursor: pointer; text-align: left;
+  background: var(--ground); box-shadow: var(--card-shadow); font-family: var(--font); color: var(--bone);
+}
+.peek-card img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
+.peek-body { display: flex; flex-direction: column; min-width: 0; }
+.peek-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.peek-sub { font-size: 12px; color: var(--secondary); }
+.peek-sub.open { color: var(--teal); }
+.peek-card.closed img { opacity: .6; }
+
+/* ---------- skeleton loading ----------
+   See youSkeletonHtml() and markLoadedImages() in js/app.js. .sk is a
+   placeholder shape with a light sweeping across it; the colours are a
+   whisper of the text colour so they work on both themes. Photos from
+   Cloudinary get the same sweep as their background until they load, then
+   .ld (added on load or error) turns it off. Reduced motion: still shapes,
+   no sweep. */
+:root { --sk-base: rgba(245,241,232,.06); --sk-hi: rgba(245,241,232,.13); }
+[data-theme="light"] { --sk-base: rgba(42,36,25,.06); --sk-hi: rgba(42,36,25,.12); }
+.sk, img[src*="res.cloudinary.com"]:not(.ld) {
+  background-color: var(--sk-base);
+  background-image: linear-gradient(100deg, transparent 30%, var(--sk-hi) 50%, transparent 70%);
+  background-size: 250% 100%; background-repeat: no-repeat;
+  animation: sk-shine 1.5s ease-in-out infinite;
+}
+.collage-tile.is-loading .tile-loading.sk { background-color: rgba(20,18,21,.35); }
+@keyframes sk-shine { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sk, img[src*="res.cloudinary.com"]:not(.ld) { animation: none; background-image: none; }
+}
+.sk-page .sk-card { display: flex; flex-direction: column; gap: 10px; }
+.sk-center { align-items: center; padding-top: 26px; padding-bottom: 22px; }
+.sk-line { height: 12px; border-radius: 6px; }
+.sk-line.sk-sm { height: 9px; }
+.sk-line.sk-lg { height: 18px; border-radius: 8px; }
+.sk-circle { width: 96px; height: 112px; border-radius: 50% 50% 46% 46%; margin-bottom: 6px; }
+.sk-bar { height: 8px; border-radius: 4px; width: 100%; margin-top: 4px; }
+.sk-row { display: flex; align-items: center; gap: 12px; }
+.sk-row + .sk-row { margin-top: 6px; }
+.sk-thumb { width: 48px; height: 48px; border-radius: 10px; flex: none; }
+.sk-row-text { flex: 1; display: flex; flex-direction: column; gap: 8px; }

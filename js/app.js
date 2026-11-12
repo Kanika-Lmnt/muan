@@ -226,6 +226,7 @@ function setSheetView(view) {
 // of its own, so its nav handler calls this directly instead.
 function setMobileScreen(screen) {
   state.screen = screen;
+  if (screen === 'map') requestAnimationFrame(updateMapPeek);
   const app = document.getElementById('app');
   if (app) app.dataset.screen = screen;
   document.querySelectorAll('#bottomNav .nav-item').forEach(el =>
@@ -297,6 +298,55 @@ function goToMap() {
   setSheetView({ type: 'map', venueId: null });
   if (!state.map) return;
   requestAnimationFrame(() => { state.map.resize(); maybeRecenterMap(); });
+}
+
+/* ---------- places in view (Map tab, phones) ----------
+   A short swipe row along the bottom of the map: the places inside what's
+   on screen, nearest the middle first, following the filter chips. Lists
+   are what people choose from (a map shows where, not which), so the Map
+   tab gets one too. Hidden while a route is showing — the route card
+   lives in the same spot. */
+const PEEK_MAX = 12;
+function updateMapPeek() {
+  let peek = document.getElementById('mapPeek');
+  const app = document.getElementById('app');
+  if (!isMobile() || !state.map || state.screen !== 'map' || state.routeVenueId) {
+    if (peek) peek.hidden = true;
+    app?.classList.remove('has-peek');
+    return;
+  }
+  if (!peek) {
+    peek = document.createElement('div');
+    peek.id = 'mapPeek';
+    peek.className = 'map-peek';
+    peek.addEventListener('click', e => {
+      const c = e.target.closest('[data-open-venue]');
+      if (c) openVenue(c.dataset.openVenue);
+    });
+    app.appendChild(peek);
+  }
+  const b = state.map.getBounds();
+  const c = state.map.getCenter();
+  const f = state.filter || 'all';
+  const inView = state.venues
+    .filter(v => v.pin_status !== 'pending' && v.lat != null && v.lng != null)
+    .filter(v => f === 'all' || f === 'event' || v.type === f)
+    .filter(v => b.contains([v.lng, v.lat]))
+    .map(v => ({ v, d: (v.lat - c.lat) ** 2 + ((v.lng - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 }))
+    .sort((a, z) => a.d - z.d)
+    .slice(0, PEEK_MAX)
+    .map(x => x.v);
+  if (!inView.length) { peek.hidden = true; app.classList.remove('has-peek'); return; }
+  peek.innerHTML = inView.map(v => {
+    const st = openStatus(v);
+    const img = v.photos?.length ? cloudinaryUrl(v.photos[0], 160) : venueTileUri(v.short_name || v.name, v.type, false);
+    return `<button type="button" class="peek-card${st.open ? '' : ' closed'}" data-open-venue="${esc(v.id)}">
+      <img src="${esc(img)}" alt="" loading="lazy">
+      <span class="peek-body"><span class="peek-name">${esc(v.short_name || v.name)}</span>
+      <span class="peek-sub${st.open ? ' open' : ''}">${esc(st.label)}</span></span></button>`;
+  }).join('');
+  peek.hidden = false;
+  app.classList.add('has-peek');
 }
 
 /* ---------- geolocation ---------- */
@@ -805,6 +855,7 @@ async function boot() {
         applyAvatarUrl(me.avatar_url || null);
         // where this person has been, for the Top lists' "been" marks
         state.myCounts = me.venue_counts || {};
+        state.myReactions = me.reactions || {};
         if (state.screen === 'home' && state.sheetView?.type === 'home') {
           const sh = document.getElementById('sheet');
           const y = sh ? sh.scrollTop : 0;
@@ -1249,10 +1300,11 @@ function earnedItems(venueCounts) {
   return itemProgress(venueCounts).filter(it => it.earned);
 }
 
-/* must stay in sync with RIVERSIDE_VENUES in functions/api/checkin.js */
+/* must stay in sync with RIVERSIDE_VENUES in functions/api/_riverside.js */
 const RIVERSIDE = [
   'chokdee-cafe', 'sinouk-khemkhong', 'night-street',
-  'vte-night-market', 'baron', 'mahasan', 'rustic-white', 'seventh-heaven'
+  'vte-night-market', 'baron', 'mahasan', 'rustic-white', 'seventh-heaven',
+  'kong-view',
 ];
 
 const total = c => Object.values(c).reduce((a,b) => a+b, 0);
@@ -1272,6 +1324,17 @@ const BADGES = [
       hint: 'riverside places' }) },
   { id:'night-owl', name:'Night Owl', icon:'🌙',
     progress: () => ({ have: 0, need: 1, hint: 'check in after midnight' }) },
+  // migrations/019 — the second argument is /api/me, for the ones that count
+  // nights or months rather than places
+  { id:'cafe-hunter', name:'Café Hunter',
+    progress: c => ({ have: Object.keys(c).filter(id => venueById(id)?.type === 'cafe').length, need: 5 }) },
+  { id:'bar-hopper', name:'Bar Hopper', progress: () => ({ have: 0, need: 1 }) },
+  { id:'sunset', name:'Sunset', progress: () => ({ have: 0, need: 1 }) },
+  { id:'early-bird', name:'Early Bird', progress: () => ({ have: 0, need: 1 }) },
+  { id:'ten-nights', name:'Ten Nights Out', progress: (c, me) => ({ have: me?.nights_total || 0, need: 10 }) },
+  { id:'streak-3', name:'3-Month Streak', progress: (c, me) => ({ have: me?.streak_now || 0, need: 3 }) },
+  { id:'streak-6', name:'6-Month Streak', progress: (c, me) => ({ have: me?.streak_now || 0, need: 6 }) },
+  { id:'streak-12', name:'Year of Fire', progress: (c, me) => ({ have: me?.streak_now || 0, need: 12 }) },
 ];
 
 /* items sit in their own quadrant so they never overlap: ticket upper-left
@@ -1681,7 +1744,7 @@ async function openFlameSheet() {
   toggleSheet(false);
   setSheetView({ type: 'flame', venueId: null });
   setMobileScreen('you');
-  setSheet('<div class="s-sub" style="text-align:center;padding:30px 0;">Loading your flame…</div>');
+  setSheet(youSkeletonHtml());
   let me = null;
   try { me = await (await apiFetch('/api/me')).json(); } catch(e) { console.warn('[muan] /api/me failed', e); }
   if (!me || !me.ok) {
@@ -2332,7 +2395,7 @@ function badgeProgressHtml(me) {
   return `<div class="pg-list">${all.map(b => {
     const rule = BADGES.find(x => x.id === b.id);
     const got = earned.get(b.id);
-    const pr = rule ? rule.progress(counts) : { have: got ? 1 : 0, need: 1 };
+    const pr = rule ? rule.progress(counts, me) : { have: got ? 1 : 0, need: 1 };
     const have = got ? pr.need : Math.min(pr.have, pr.need);
     return `<div class="pg-item${got ? ' got' : ''}">
       <span class="pg-item-ico">${badgeIcon(b, 22)}</span>
@@ -2379,6 +2442,7 @@ function openProgressSheet(me) {
         <div><b>${me.total_checkins}</b><span>check-ins</span></div>
       </div>
 
+      ${challengeCardHtml(me)}
       <div class="fl-card"><div class="fl-card-h">Phai's path</div>${phaiPathHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">Monthly streak</div>${streakMonthsHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">Badges · ${(me.badges || []).length} of ${(me.all_badges || []).length || (me.badges || []).length}</div>${badgeProgressHtml(me)}</div>
@@ -2395,6 +2459,173 @@ function openProgressSheet(me) {
     el.addEventListener('click', () => openVenue(el.dataset.openVenue));
     el.addEventListener('keydown', e => { if (e.key === 'Enter') openVenue(el.dataset.openVenue); });
   });
+}
+
+/* ---------- "How was it?" (after a check-in, or from a venue page) ----------
+   One tap from three reactions, then — if you've rated other places of the
+   same kind the same way — "which did you like more?" a few times, a
+   binary search for where this one sits among them (Beli's trick: ranking
+   by comparison is quicker and more honest than picking a number). Saved
+   by POST /api/react; becomes "your #2 café" on the venue page and Your
+   rankings on You. Only for places you've checked in at. TODO(lao): the
+   reaction labels and 'ເຈົ້າມັກບ່ອນໃດກວ່າ?'. */
+const REACTIONS = [
+  { id: 'loved', en: 'Loved it', lo: 'ມັກຫຼາຍ' },
+  { id: 'fine', en: 'It was fine', lo: 'ກໍໄດ້ຢູ່' },
+  { id: 'not-for-me', en: 'Not for me', lo: 'ບໍ່ແມ່ນແນວຂ້ອຍ' },
+];
+const REACTION_ORDER = REACTIONS.map(r => r.id);
+
+// this person's places of one type, best first: reaction, then rank
+function myRanked(type) {
+  const rx = state.myReactions || {};
+  return Object.entries(rx)
+    .map(([id, r]) => ({ v: venueById(id), ...r }))
+    .filter(x => x.v && x.v.type === type)
+    .sort((a, b) => (REACTION_ORDER.indexOf(a.reaction) - REACTION_ORDER.indexOf(b.reaction))
+      || ((b.rank ?? 0) - (a.rank ?? 0)));
+}
+
+function myRankOf(v) {
+  const i = myRanked(v.type).findIndex(x => x.v.id === v.id);
+  return i < 0 ? null : i + 1;
+}
+
+function typeOne(type) {
+  return (VENUE_TYPE_META[type]?.one || 'place').toLowerCase();
+}
+
+// the venue page line: "You loved it · your #2 café · Change", or a nudge
+// to rate a place you've been to but haven't rated
+function myReactionLineHtml(v) {
+  if (!state.myCounts?.[v.id]) return '';
+  const r = state.myReactions?.[v.id];
+  if (!r) return `<button type="button" class="vd-myrx vd-myrx-ask" data-rate-venue="${esc(v.id)}">How was it? Rate this place ›</button>`;
+  const label = REACTIONS.find(x => x.id === r.reaction);
+  const n = myRankOf(v);
+  return `<div class="vd-myrx">You: <b>${esc(label?.en || '')}</b>${n ? ` · your #${n} ${esc(typeOne(v.type))}` : ''}
+    <button type="button" class="vd-myrx-change" data-rate-venue="${esc(v.id)}">Change</button></div>`;
+}
+
+function rxSheet(innerHtml) {
+  document.querySelector('.rx-pop')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'wheel-pop rx-pop';
+  ov.innerHTML = `<div class="wheel-sheet rx-sheet" role="dialog" aria-modal="true" aria-label="How was it?">
+    <div class="wheel-grip"></div>${innerHtml}</div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
+  return ov;
+}
+function rxClose(ov) { ov.classList.remove('show'); setTimeout(() => ov.remove(), 240); }
+
+function rxVenueCard(v, attr) {
+  const img = v.photos?.length ? cloudinaryUrl(v.photos[0], 400) : venueTileUri(v.short_name || v.name, v.type, true);
+  return `<button type="button" class="rx-card" ${attr}>
+    <img src="${esc(img)}" alt="" loading="eager"><span>${esc(v.short_name || v.name)}</span></button>`;
+}
+
+async function askHowWasIt(venueId, then) {
+  const v = venueById(venueId);
+  if (!v) { then?.(); return; }
+  const done = () => { then?.(); };
+  const ov = rxSheet(`
+    <div class="wheel-head"><span class="wheel-title">How was ${esc(v.short_name || v.name)}?</span>
+      <button type="button" class="wheel-close" aria-label="Skip">✕</button></div>
+    <div class="wheel-body rx-body">
+      ${REACTIONS.map(r => `<button type="button" class="rx-btn rx-${r.id}" data-rx="${r.id}">
+        <span class="lao">${esc(r.lo)}</span><span>${esc(r.en)}</span></button>`).join('')}
+      <button type="button" class="rx-skip" data-rx-skip>Not now</button>
+    </div>`);
+  ov.querySelector('.wheel-close').addEventListener('click', () => { rxClose(ov); done(); });
+  ov.querySelector('[data-rx-skip]').addEventListener('click', () => { rxClose(ov); done(); });
+  ov.addEventListener('click', e => { if (e.target === ov) { rxClose(ov); done(); } });
+  ov.querySelectorAll('[data-rx]').forEach(b => b.addEventListener('click', async () => {
+    const reaction = b.dataset.rx;
+    // the others in the same group, best first — where does this one go?
+    const group = myRanked(v.type).filter(x => x.reaction === reaction && x.v.id !== v.id);
+    let lo = 0, hi = group.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const pick = await rxCompare(ov, v, group[mid].v);
+      if (pick === 'this') hi = mid;
+      else if (pick === 'other') lo = mid + 1;
+      else { lo = hi = mid; }                      // too close to call
+      if (pick === null) { rxClose(ov); done(); return; }
+    }
+    const above = group[lo - 1]?.rank, below = group[lo]?.rank;
+    const rank = above == null && below == null ? 0
+      : above == null ? (below ?? 0) + 1
+      : below == null ? above - 1
+      : (above + below) / 2;
+    try {
+      const r = await apiFetch('/api/react', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue_id: v.id, reaction, rank }),
+      });
+      if (!r.ok) throw new Error(r.status);
+      state.myReactions = { ...(state.myReactions || {}), [v.id]: { reaction, rank } };
+      const n = myRankOf(v);
+      showToast(n ? `${v.short_name || v.name} is your #${n} ${typeOne(v.type)}` : 'Saved');
+    } catch (e) {
+      console.warn('[muan] reaction not saved', e);
+      showToast("Couldn't save that — try again from the venue page");
+    }
+    rxClose(ov);
+    done();
+  }));
+}
+
+// one "which did you like more?" question; resolves 'this' | 'other' |
+// 'same' | null (closed)
+function rxCompare(ov, v, other) {
+  return new Promise(resolve => {
+    const sheet = ov.querySelector('.rx-sheet');
+    sheet.innerHTML = `<div class="wheel-grip"></div>
+      <div class="wheel-head"><span class="wheel-title">Which did you like more? · <span class="lao">ເຈົ້າມັກບ່ອນໃດກວ່າ?</span></span>
+        <button type="button" class="wheel-close" aria-label="Close">✕</button></div>
+      <div class="wheel-body">
+        <div class="rx-vs">${rxVenueCard(v, 'data-pick="this"')}<span class="rx-or">or</span>${rxVenueCard(other, 'data-pick="other"')}</div>
+        <button type="button" class="rx-skip" data-pick="same">Too close to call</button>
+      </div>`;
+    sheet.querySelector('.wheel-close').addEventListener('click', () => resolve(null));
+    sheet.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => resolve(b.dataset.pick)));
+  });
+}
+
+/* This month's challenge (functions/api/_challenges.js): one at a time,
+   the same for everyone, +50 embers once. Shown on You and Progress. */
+function challengeCardHtml(me) {
+  const c = me.challenge;
+  if (!c) return '';
+  const end = c.ends ? new Date(new Date(c.ends).getTime() - 1) : null;
+  const daysLeft = end ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : null;
+  return `<div class="fl-card fl-card-challenge${c.done ? ' done' : ''}">
+    <div class="ch-top">
+      <span class="ch-label">This month's challenge</span>
+      <span class="ch-reward">${c.done ? 'done' : `+${c.embers} embers`}</span>
+    </div>
+    <div class="ch-title">${esc(c.title)}</div>
+    ${c.title_lo ? `<div class="ch-title-lo lao">${esc(c.title_lo)}</div>` : ''}
+    ${c.done
+      ? `<div class="ch-sub">Done — ${c.embers} embers added. A new one starts next month.</div>`
+      : `${goalBarHtml(c.have / c.need)}<div class="ch-sub">${c.have} of ${c.need}${daysLeft !== null ? ` · ${plural(daysLeft, 'day', 'days')} left` : ''}</div>`}
+  </div>`;
+}
+
+// "Your rankings" on You: your top three of each kind
+function myRankingsHtml() {
+  const types = ['bar', 'cafe', 'restaurant', 'venue'].map(t => ({ t, list: myRanked(t).slice(0, 3) })).filter(x => x.list.length);
+  if (!types.length) return '';
+  return `<div class="fl-card fl-card-rankings">
+    <div class="fl-card-h">Your rankings</div>
+    ${types.map(({ t, list }) => `
+      <div class="rk-type">${esc(VENUE_TYPE_META[t]?.label || t)}</div>
+      ${list.map((x, i) => `<button type="button" class="rk-row" data-open-venue="${esc(x.v.id)}">
+        <span class="rk-n">${i + 1}</span><span class="rk-name">${esc(x.v.short_name || x.v.name)}</span>
+        <span class="rk-rx">${esc(REACTIONS.find(r => r.id === x.reaction)?.en || '')}</span></button>`).join('')}`).join('')}
+    <div class="pg-note">From your "How was it?" answers. Rate a place from its page any time.</div>
+  </div>`;
 }
 
 function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues: [] }, pendingVenuesResult = { ok: true, venues: [] }) {
@@ -2421,9 +2652,11 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
         ? flameInviteHtml(flameHtml, me.total_checkins)
         : flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName)}
 
+      ${challengeCardHtml(me)}
       ${recapCardHtml(me)}
       ${inviting ? '' : nextUpHtml(me, items, stageLabels, stageLo)}
       ${yourCityHtml(me)}
+      ${myRankingsHtml()}
       ${savedCardHtml()}
 
       ${identityCardHtml(me, avatarIndex, items)}
@@ -2461,6 +2694,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   document.querySelector('[data-open-progress]')?.addEventListener('click', () => openProgressSheet(me));
   // the Top lists mark places you've been (topRowHtml()) from this
   state.myCounts = me.venue_counts || {};
+  state.myReactions = me.reactions || {};
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
 
@@ -2638,7 +2872,7 @@ function initMap() {
     document.getElementById('map').classList.toggle('labels-hidden', state.map.getZoom() < 12.2);
   });
   state.map.on('zoomend', () => scheduleLabelCrowding());
-  state.map.on('moveend', () => scheduleLabelCrowding());
+  state.map.on('moveend', () => { scheduleLabelCrowding(); updateMapPeek(); });
   state.map.on('click', (e) => {
     if (e.originalEvent.target.closest('.marker')) return;
     if (state.selectedId) { stopTracking(); goHome(); }
@@ -3129,12 +3363,28 @@ function icoWaves(size) {
    run to ship (see CLAUDE.md's migration rules). Unknown codes fall back to
    the flame rather than to b.icon, so a badge added server-side can never
    put an emoji back on the screen. */
+// stroke icons for the 019 badges, same 24-unit, stroke-2 style as the rest
+const strokeIco = (d) => (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const icoCupBadge = strokeIco('<path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c-1 1.2 1 2 0 3.4M12 3c-1 1.2 1 2 0 3.4"/>');
+const icoCocktailBadge = strokeIco('<path d="M4 5h16l-8 9z"/><path d="M12 14v6M8 20h8"/><path d="m15 3 2 2"/>');
+const icoSunsetBadge = strokeIco('<path d="M3 18h18M6 14a6 6 0 0 1 12 0"/><path d="M12 4v3M4.9 7.9l1.6 1.6M19.1 7.9l-1.6 1.6"/>');
+const icoSunriseBadge = strokeIco('<circle cx="12" cy="13" r="4"/><path d="M12 3v2M4 13H2M22 13h-2M5.6 6.6 7 8M18.4 6.6 17 8M3 20h18"/>');
+const icoStarsBadge = strokeIco('<path d="m12 3 1.8 4.2 4.5.4-3.4 3 1 4.4L12 12.7 8.1 15l1-4.4-3.4-3 4.5-.4z"/><path d="M5 20h.01M12 20h.01M19 20h.01"/>');
 const BADGE_ICONS = {
   'first-fire': icoFlameNav,
   'explorer':   icoCompass,
   'regular':    icoChair,
   'riverside':  icoWaves,
   'night-owl':  icoMoon,
+  'cafe-hunter': icoCupBadge,
+  'bar-hopper':  icoCocktailBadge,
+  'sunset':      icoSunsetBadge,
+  'early-bird':  icoSunriseBadge,
+  'ten-nights':  icoStarsBadge,
+  'streak-3':    icoFlameNav,
+  'streak-6':    icoFlameNav,
+  'streak-12':   icoFlameNav,
 };
 function badgeIcon(b, size) {
   return (BADGE_ICONS[b.id] || icoFlameNav)(size);
@@ -4231,6 +4481,40 @@ function venueTileUri(name, type, wide, showLetter = true, art = true) {
 // needs a wrapper/ancestor with color set (var(--flame) unless the
 // surrounding background is already flame-coloured, e.g. .btn-go, where it
 // should inherit that button's existing --ink icon colour instead).
+/* ---------- skeleton loading ----------
+   Grey placeholder shapes in the layout of what's coming, with a soft
+   light sweeping across them (.sk in css/style.css), instead of a spinner
+   or "Loading…". The page looks almost ready straight away, and nothing
+   jumps when the real content lands, because it lands in the same places.
+   Photos get the same sweep on their own: any Cloudinary <img> shimmers
+   until it has loaded (see markLoadedImages() below). */
+function skLine(w, extra = '') { return `<div class="sk sk-line ${extra}" style="width:${w}%"></div>`; }
+function skRow() {
+  return `<div class="sk-row"><div class="sk sk-thumb"></div>
+    <div class="sk-row-text">${skLine(55)}${skLine(35, 'sk-sm')}</div></div>`;
+}
+// the You screen while /api/me (and the bits that come with it) load:
+// flame card, challenge card, then a short list, as on the real screen
+function youSkeletonHtml() {
+  return `<div class="fl-wrap sk-page" aria-busy="true" aria-label="Loading">
+    <div class="fl-card sk-card sk-center">
+      <div class="sk sk-circle"></div>${skLine(38, 'sk-lg')}${skLine(26, 'sk-sm')}${skLine(60)}
+    </div>
+    <div class="fl-card sk-card">${skLine(40, 'sk-sm')}${skLine(75, 'sk-lg')}<div class="sk sk-bar"></div></div>
+    <div class="fl-card sk-card">${skRow()}${skRow()}${skRow()}</div>
+  </div>`;
+}
+
+// marks every <img> once it has loaded (or failed), so the photo shimmer
+// in css/style.css stops. One listener on the document: load and error
+// don't bubble, but they do reach a capturing listener, so this covers
+// every image the app ever renders without touching each template.
+(function markLoadedImages() {
+  const done = e => { if (e.target?.tagName === 'IMG') e.target.classList.add('ld'); };
+  document.addEventListener('load', done, true);
+  document.addEventListener('error', done, true);
+})();
+
 function loadingRing(size = 28) {
   return `<svg class="lring" width="${size}" height="${size}" viewBox="0 0 44 44" aria-hidden="true">
     <circle class="lring-track" cx="22" cy="22" r="18" fill="none"
@@ -4512,7 +4796,7 @@ function collagePhotosHtml(v, altName) {
   const phSmall = venueTileUri(v.short_name || v.name, v.type, false, true, false);
   const n = Math.min(photos.length, 3);
   const extra = photos.length - 3;
-  const ring = `<span class="tile-loading">${loadingRing(24)}</span>`;
+  const ring = `<span class="tile-loading sk"></span>`;
   let html = `<div class="collage-photos">`;
   html += `<div class="collage-tile collage-tile-big${n === 1 ? ' solo' : ''}">
     <img src="${phBig}" data-src="${esc(cloudinaryUrl(photos[0], 600))}" alt="${esc(altName)}" loading="lazy" draggable="false">${ring}</div>`;
@@ -6001,6 +6285,74 @@ function typeTopListHtml(type, secH) {
     `<div class="top-list">${list.map(topRowHtml).join('')}</div>` + topNoteHtml([list]);
 }
 
+/* ---------- Themed lists (Home "Lists" row, openThemeList()) ----------
+   "Where's a rooftop?" "Where's live music tonight?" — the questions people
+   actually ask, answered as short lists. Two kinds:
+     - Kar's: data/picks.json "themes", each a title and venue ids, edited
+       by hand. Seeded only with venues whose OWN description says it
+       (rooftop, live music) — never guessed from a name or a photo.
+     - worked out from real data: open past 1 am (today's hours), by the
+       river (the same RIVERSIDE list the badge uses), settle-in cafés (the
+       vibe tags).
+   A list with fewer than 2 places isn't shown. TODO(lao): the list titles. */
+const COMPUTED_THEMES = [
+  { id: 'late', title: 'Open till 1 am or later', title_lo: 'ເປີດຮອດຕີໜຶ່ງ',
+    venues: () => state.venues.filter(v => v.hours && (parseHours(v.hours[DAYS[new Date().getDay()]])?.close ?? 0) >= 1500) },
+  { id: 'river', title: 'By the river', title_lo: 'ແຄມຂອງ',
+    venues: () => RIVERSIDE.map(venueById).filter(Boolean) },
+  { id: 'settle-in', title: 'Cafés to settle into', title_lo: 'ຄາເຟນັ່ງດົນໆ',
+    venues: () => state.venues.filter(v => v.type === 'cafe' && (v.vibe || []).some(t => t === 'settle-in' || t === 'for-coffee')) },
+];
+
+function allThemes() {
+  const kar = (state.picks?.themes || []).map(t => ({
+    id: t.id, title: t.title, title_lo: t.title_lo,
+    venues: () => (t.venue_ids || []).map(venueById).filter(Boolean),
+  }));
+  return [...kar, ...COMPUTED_THEMES]
+    .map(t => ({ ...t, list: t.venues().filter(v => v.pin_status !== 'pending') }))
+    .filter(t => t.list.length >= 2);
+}
+
+function themeCardHtml(t) {
+  const pics = t.list.slice(0, 3).map(v => v.photos?.length
+    ? cloudinaryUrl(v.photos[0], 240) : venueTileUri(v.short_name || v.name, v.type, false));
+  const been = state.myCounts ? t.list.filter(v => state.myCounts[v.id]).length : null;
+  return `<button type="button" class="theme-card" data-theme-list="${esc(t.id)}">
+    <span class="theme-pics">${pics.map(p => `<img src="${esc(p)}" alt="" loading="lazy">`).join('')}</span>
+    <span class="theme-title">${esc(t.title)}</span>
+    <span class="theme-sub"><span class="lao">${esc(t.title_lo || '')}</span> · ${plural(t.list.length, 'place', 'places')}${been ? ` · been to ${been}` : ''}</span>
+  </button>`;
+}
+
+function homeThemesHtml(secH) {
+  const themes = allThemes();
+  if (!themes.length) return '';
+  return secH('Lists · ລາຍການ') + `<div class="theme-rail">${themes.map(themeCardHtml).join('')}</div>`;
+}
+
+function openThemeList(id) {
+  const t = allThemes().find(x => x.id === id);
+  if (!t) return;
+  const list = sortForDisplay(t.list);
+  const been = state.myCounts ? list.filter(v => state.myCounts[v.id]).length : null;
+  setSheetView({ type: 'theme', venueId: null });
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title lao">${esc(t.title_lo || t.title)}</div><div class="pg-title-en">${esc(t.title)}</div></div>
+    </div>
+    ${been !== null ? `<div class="top-tally" style="margin:0 0 12px;">You've been to <b>${been}</b> of ${list.length}</div>` : ''}
+    ${list.map(v => isMobile() ? rowCard(v) : plainListCardHtml(v)).join('')}
+    <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', () => {
+    state.filter = 'all';
+    renderHomeSheet();
+  }));
+}
+
 /* ---------- "When people go" (venue page) ----------
    From /api/venue-stats: real check-ins over 90 days by weekday, in
    Vientiane time. The server only sends numbers once a venue has enough
@@ -6280,6 +6632,8 @@ const ON_FIRE_CAROUSEL = true;
 const ALL_LIST_SKIPS_SHOWN = false;
 
 function renderHomeSheet() {
+  // the map's places-in-view row follows the same filter
+  requestAnimationFrame(updateMapPeek);
   state.selectedId = null; if (state.map) updateSelection();
   setSheetView({ type: 'home', venueId: null });
   setMobileScreen('home');
@@ -6527,6 +6881,8 @@ function renderHomeSheet() {
   if (f === 'all' && !state.homeQuery) {
     const top = homeTopListsHtml(secH);
     if (top) { rendered = true; html += top; }
+    const themes = homeThemesHtml(secH);
+    if (themes) { rendered = true; html += themes; }
     html += decideCardHtml();
   }
 
@@ -7131,6 +7487,7 @@ function openVenue(id) {
     ${picked ? headHtml.replace('class="vd-hero', 'class="vd-hero vd-hero-picked') : headHtml}
     ${pickBannerHtml(v)}
     ${ratingLineHtml(v, 'vd-rating')}
+    ${myReactionLineHtml(v)}
     ${vibes.length ? `<div class="vd-vibes">${vibes.map(t => `<span class="vd-vibe">${esc(t.label)}</span>`).join('')}</div>` : ''}
     ${actionsHtml}
     ${whyHtml}
@@ -7158,6 +7515,8 @@ function openVenue(id) {
   if (sheet) sheet.scrollTop = 0;
   loadVenueBusy(v);
   bindPickBanner();
+  document.querySelectorAll('#sheetInner [data-rate-venue]').forEach(b =>
+    b.addEventListener('click', () => askHowWasIt(v.id, () => openVenue(v.id))));
   // mobile back-button support: a fresh open pushes a history entry so the
   // hardware/browser back button can pop it and close the venue (see the
   // popstate listener in boot()) — except on a deep link (?v=id) load, where
@@ -7442,6 +7801,7 @@ function showRoute(geometry, venueId) {
   updateUserMarker();
   state.currentRouteGeometry = geometry;
   state.routeVenueId = venueId;   // makes the venue sticky — see goHome()
+  updateMapPeek();
   drawRouteLayers(geometry);
 
   // routes can run well outside the normal city fence — lift it while shown,
@@ -7566,6 +7926,7 @@ function showDataFailure() {
 function clearRoute() {
   state.currentRouteGeometry = null;
   state.routeVenueId = null;
+  requestAnimationFrame(updateMapPeek);
   state.routeLabel = null;
   state.map.setMaxBounds(MAP_BOUNDS.maxBounds);
   state.map.setMinZoom(MAP_BOUNDS.minZoom);
@@ -7603,6 +7964,8 @@ async function doCheckin(v) {
       const toCounts = ids => Object.fromEntries(ids.map(id => [id, 1]));
       const itemsBefore = earnedItems(toCounts(beforeVisited)).map(it => it.id);
       data.new_items = earnedItems(toCounts(afterVisited)).filter(it => !itemsBefore.includes(it.id));
+      data.venue_id = v.id;
+      state.myCounts = { ...(state.myCounts || {}), [v.id]: (state.myCounts?.[v.id] || 0) + 1 };
       showCelebration(data);
     } else if (data.already) {
       document.getElementById('checkinLabel').textContent = 'Already checked in tonight';
@@ -7635,7 +7998,7 @@ function showCelebration(data) {
   ov.className = 'celebrate';
   ov.innerHTML = `
     <div class="cel-card">
-      <div class="cel-flame">🔥</div>
+      <img class="cel-flame cel-phai" src="assets/mascot/phai-delighted.svg" alt="" width="200" height="240" draggable="false">
       <div class="cel-title">Checked in!</div>
       <div class="cel-venue">${esc(data.venue)}</div>
       <div class="cel-embers"><span class="cel-num" data-target="${data.embers_earned}">0</span><span class="cel-unit">embers</span></div>
@@ -7652,6 +8015,7 @@ function showCelebration(data) {
           `<div class="cel-row cel-badge"><span>${esc(it.name)} unlocked</span><b>new</b></div>`
         ).join('') : ''}
       </div>
+      ${data.challenge_done ? `<div class="cel-challenge">Monthly challenge done · <b>+${data.challenge_done.embers}</b><span>${esc(data.challenge_done.title)}</span></div>` : ''}
       ${data.capped ? '<div class="cel-capped">daily ember cap reached — check-in still counted</div>' : ''}
       <button class="btn cel-done">Nice</button>
       <div class="cel-confetti" data-confetti-svg></div>
@@ -7682,7 +8046,9 @@ function showCelebration(data) {
     setTimeout(() => ov.remove(), 300);
     closeLightbox();
     if (state.map) clearRoute();
-    openFlameSheet();
+    // "How was it?" while it's fresh — unless it's already been rated
+    if (data.venue_id && !state.myReactions?.[data.venue_id]) askHowWasIt(data.venue_id, openFlameSheet);
+    else openFlameSheet();
   });
 }
 
@@ -7983,6 +8349,8 @@ function setSheet(html) {
   inner.classList.add('anim');
   inner.querySelectorAll('[data-open-venue]').forEach(el =>
     el.addEventListener('click', () => openVenue(el.dataset.openVenue)));
+  inner.querySelectorAll('[data-theme-list]').forEach(el =>
+    el.addEventListener('click', () => openThemeList(el.dataset.themeList)));
   inner.querySelectorAll('[data-top-type]').forEach(el =>
     el.addEventListener('click', () => {
       state.topType = el.dataset.topType;

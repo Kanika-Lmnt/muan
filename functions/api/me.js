@@ -2,6 +2,7 @@ import { getSessionUser } from './_auth.js';
 import { computeHeat } from './_heat.js';
 import { isAdmin } from './_admin.js';
 import { vtMonth, prevMonthOf, vtMonthRange, vtNight } from './_time.js';
+import { challengeFor, monthRows as challengeRows, challengeProgress } from './_challenges.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET')
@@ -28,10 +29,26 @@ export async function onRequest(context) {
     const allTimes = await db.prepare(
       'SELECT created_at, embers FROM checkins WHERE user_id=?'
     ).bind(user.id).all();
+    const nightsTotal = new Set(allTimes.results.map(r => vtNight(r.created_at))).size;
     const monthsActive = [...new Set(allTimes.results.map(r => vtMonth(new Date(r.created_at))))].sort();
-    const embersMonth = allTimes.results
+    let embersMonth = allTimes.results
       .filter(r => r.created_at >= monthStart && r.created_at < monthEnd)
       .reduce((n, r) => n + (r.embers || 0), 0);
+
+    // this month's challenge, and "How was it?" answers. Guarded so /api/me
+    // still answers if migration 019 hasn't been applied yet.
+    let challenge = null, reactions = {};
+    try {
+      const ch = challengeFor(month);
+      const rowsM = await challengeRows(db, user.id, monthStart, monthEnd);
+      const done = await db.prepare('SELECT embers FROM user_challenges WHERE user_id=? AND month=?')
+        .bind(user.id, month).first();
+      challenge = { ...challengeProgress(ch, rowsM), done: !!done, ends: monthEnd };
+      if (done) embersMonth += done.embers;
+      const rx = await db.prepare('SELECT venue_id, reaction, rank FROM user_reactions WHERE user_id=?')
+        .bind(user.id).all();
+      reactions = Object.fromEntries(rx.results.map(r => [r.venue_id, { reaction: r.reaction, rank: r.rank }]));
+    } catch (e) { console.error('challenge/reactions skipped (migration 019 applied?)', e); }
     const venues = await db.prepare(
       'SELECT COUNT(DISTINCT venue_id) AS c FROM checkins WHERE user_id=?'
     ).bind(user.id).first();
@@ -134,7 +151,10 @@ export async function onRequest(context) {
       checkin_days: nightsThisMonth,
       recent: recentRows.results,
       months_active: monthsActive,
+      nights_total: nightsTotal,
       embers_month: embersMonth,
+      challenge,
+      reactions,
       phai_thresholds: thresholds,
       venue_counts: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.c])),
       // last check-in per venue (ISO) — "your places" on the You screen

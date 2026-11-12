@@ -324,3 +324,62 @@ learning guide.
   phai_thresholds for it. Back (and Android back) returns to You.
 - **Top lists, signed in**: places you've been get a "been" mark, and each
   list says "You've been to 2 of 5".
+
+## 18. Challenges, new badges, "How was it?", Lists, map peek (7 Nov)
+
+**Needs migration 019 on production before deploy** (CLAUDE.md rule):
+`npx wrangler d1 execute muan-db --remote --file=migrations/019_challenges_badges_reactions.sql`,
+then `node scripts/check-schema.js`. It adds two tables (user_challenges,
+user_reactions) and eight badge rows. Safe to run twice.
+
+- **Monthly challenge** (functions/api/_challenges.js): one goal a month,
+  the same for everyone, picked from a fixed five-step rotation by the
+  month, so nothing needs setting up. +50 embers once, paid by the
+  check-in that completes it (the user_challenges primary key stops a
+  second payout). Shown on You (after the flame card), on Progress, and on
+  the check-in celebration when it completes. The +50 counts toward the
+  month's ember total. To add a challenge, add it to ROTATION.
+- **Eight new badges** (13 in all): Café Hunter (5 cafés), Bar Hopper (two
+  bars, one night), Sunset (riverside, 5–7 pm), Early Bird (café before
+  9 am), Ten Nights Out, and 3-, 6- and 12-month streaks. Logic is in
+  checkin.js; the riverside list now lives in functions/api/_riverside.js
+  (Kong View added). Badge art is still the line icons until real art exists.
+- **"How was it?"** (functions/api/react.js): after "Nice" on the
+  celebration, Phai asks Loved it / It was fine / Not for me, then "which
+  did you like more?" against your other places of the same type with the
+  same answer (a binary search, so at most 3–4 questions with 10 places).
+  Rank is a REAL so a place lands between two others without renumbering.
+  Only places you've checked in at. The venue page shows "You: Loved it ·
+  your #1 bar · Change", and You has a "Your rankings" card per type.
+  These are private: nothing public reads user_reactions yet. If we ever
+  show "people who loved this", that's a new decision, not a default.
+- **Lists on Home** (All tab, after Top lists): Rooftops and Live music are
+  hand-picked in data/picks.json `themes` (each with a _source note);
+  "Open till 1 am or later", "By the river" and "Settle in" are worked out
+  from hours, the riverside list and vibe tags. Each opens a list page with
+  "You've been to X of Y". Kar to review the two hand-picked lists.
+- **Places in view on the map** (phone only): a swipe row of up to 12
+  places under the map, nearest the map's centre first, following the
+  type filter. It refreshes as you pan, and hides while a route is shown.
+- TODO(lao): the reaction labels, ເຈົ້າມັກບ່ອນໃດກວ່າ?, challenge titles,
+  badge names, list names.
+
+## 19. Wordmark splash and skeleton loading (13 Nov)
+
+- **Splash** (index.html, all inline): ໄປໃສດີ over a wide-spaced
+  PAISAIDEE, letters settling in one by one, and a hairline under it with
+  a soft flame light running along it while the app loads. Replaces the
+  spinning ring. The two fonts are ~2KB subsets embedded in the page (just
+  P A I S D E and ໄປໃສດີ), so the wordmark is in the brand fonts from the
+  first frame. Change the word, regenerate the subsets with pyftsubset.
+  On the phone app, Android still shows its own splash first (the app icon
+  on cream, for a split second; Android 12+ only allows an icon there),
+  then this one. Both get updated when the new logo is final.
+- **Skeleton loading**: the You screen shows grey placeholder cards in its
+  real layout while /api/me loads (youSkeletonHtml()), instead of
+  "Loading your flame…". Every Cloudinary photo shimmers until it has
+  loaded (a document-level load/error listener adds .ld; the CSS is in the
+  "skeleton loading" block at the end of style.css). Collage tiles shimmer
+  instead of showing a spinning ring. loadingRing() stays for actions in
+  progress (finding a route, upload %), where a spinner is still the
+  right signal.

@@ -91,6 +91,18 @@
   <!-- og:end -->
 
   <style>
+    /* The splash is the wordmark, not a spinner: ໄປໃສດີ over PAISAIDEE,
+       letters settling in one by one, and a hairline under it with a soft
+       light running along it while the app loads. Everything here is inline
+       so it paints before css/style.css or any font has arrived.
+       The two @font-faces are tiny subsets (just the letters P A I S D E,
+       and ໄປໃສດີ: ~2KB together) so the wordmark is in the brand fonts from
+       the first frame instead of jumping from the system font. If the word
+       or its letters ever change, regenerate them (pyftsubset --text=...). */
+    @font-face { font-family: 'PSD Word'; font-weight: 400; font-display: block;
+      src: url(data:font/woff2;base64,d09GMgABAAAAAAO4AA8AAAAAB4AAAANgAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGhwbgSwcKgZgP1NUQVQuAFQRCAqDIIJrATYCJAMcCxAABCAFhDwHIBs4BlGULM5FCH4kZG76aEYjCpfmFcuy5iAma498F0Gw1mb3DpWoqZqEQtIKnWb1U0W8iZYGmdCorFW6rGeluzpLBsZDNrBMQNn7MwCs/MvRA2OQAEVEuVs7O3E5rm3d22trYQQPnMgam8baQAl1ARXwHAIpBOLrnaj1mrNR9i25TIb/PwgwCCAxhEfk5AiBfomU2FJBWS28D7tmx+GNB+q/AHHQNz0OBQgQeIwCUWDseLChlRwP9a3eANRfAGAZ68+IuMGZCJGDkiDBkeG5lgFoMkOTpWJCLwGgzeDYDBlkh20BNnGR2IYyEghc+CGsbALeMK+mefn/Q3tMiSCA+M2zgDkcQhQITCIwhR0NDM4SQOJABqPNQD4BSNCASRwCk3h2MEiB4TnkKyapqf+Y556+fb3V+VJXCAAQqMoIoAcwDPrAGeAcAO3nK2iI9/LegicfoBnoENuEes/aBrFZEEmUCeS17hmcPl0Wi+teEC0/FwQKecFTAcUuked7hcQjr8C4uqJr7fPnRCJWPVvxLvz559qC68HlFy/Ed7L+vvTyc2HtU5yee6bJv4aCIF/YC9sl2KC5SX9+yZ9aWOctZ7M7eb/Ur7Nz3ZbVW3euXdtc2tI/0DO0ZmSgq78FBensSlnLe1uZ7XNn2aO+9mz/EJ627lxDk93LZmzuybGcDO9fcZU7LYKlzOlegX6obEHjHq0Oqglq6KuVquuK9Slj+ZHvzQ/astQlJpOxbjiroHAy195elF6TrjpaEpWbX2PWJ1kcka/NdzszDWVWq6VlUpUSIEDC440jix0+5j9Fw72F7/3xe+6tN/T8v1tCc6M5BujGAAF/SpYu7P/CDEG8Wk/Tg9acR1juQk6qSL6QsglS9iEXgR61ZCQ8AgA0GOgzjUOtB+ALZmSS7CqZ8faezHH7QeZpw0yWCY9pkpwy1rMRMBjnRXHrLpowacm0IQMGzYqllKvtsWoNWF9mjUldepC+0LQJs/YZIw0hwYaBHrNFDnNmDbLs02YASDVonzXJdqMc5Rww5FxnTrdsPSaMydFv1ESezC7jRnTFCPYlxuWYSQLNMjB9Wkpt2Xnxan0GmmJ0QwalbLlqvkmBUqawVm7mMVnQj/3jYquzXt+BwJAJa6xE/U7ibdDnMXIEt9pPCQ==) format('woff2'); }
+    @font-face { font-family: 'PSD Lao'; font-weight: 400; font-display: block;
+      src: url(data:font/woff2;base64,d09GMgABAAAAAAUgAA8AAAAACZAAAATHAAIAxQAAAAAAAAAAAAAAAAAAAAAAAAAAGjYbgVwcgQgGYD9TVEFURABUEQgKhiSFHgE2AiQDIAsSAAQgBYQCByAb8wdRFJII8OOgur1iVo6IbcdR3a0L6tTDc+vqs6qHqGc8/7HW27mve+ZzBxUATSQQK0SbqNTXUSjJRq1GG7d2HcpU/ILaOcizJrWWVZZiSqQ52E9AzPgBgIlr6iItgLJcu+i3tirQNWAkYdd5FWjafGAD0+k2LLoV/IFkTbXgRxKlAywS0RMRjUY0mJl8UVrUZhi3yxW0A4cqGyH41gDcBsG39X3jrbqH660Q/BhzqgaKcPTVwnBYISpMPPCePLKzShAuFaVvlxYxKg7hiFNkohGl0RjVmSu1pLwl7xO61qr6UcaOKzGp7ZhrXdzQUsKZ8k0b9IvIa71JyfdNBySfZyJsKXc4dj5IGt66ZXcBA8G+bk1kjDRiNnYNNnJuXVC26O8s02rrQqbrUS+rFTg+75qr4lMGaqJXba+tzltA18Ona0rgAO9dd6T99H88ZMs5N92wVtQpLFFSfYW5M9CKSz67ZyIQKs9uEyaEJlpzNSiVV9TPiKjMcRug0ACryoht7QEm7U9qu3fdom5Vt7U7MhxmBXT4PXZGbWoUhGBABL/6DDAKZmKEzCYnU1rbdPi6lsyuCL0NjvTDJl67lhHXr09MugrFIo+4xpp45Yrpq2cnJi33apq9BeNEyGzSIv8BriNUwX6laaKSU960YOmnX41oKi+RC6Z3HkXyCYOwQX9lnHCXMsJ1leFL7nOK5oW7MmiPfG2pO89LPXtJz8RT+zLicl/moun5Epi3nM0GFjpp+fLVyAi7tVYuXcouiEBRgZ0zbg0KzkMesXn/6g3QLucOwBKUhxVBB8PWrFixBgoqPJpVvWQL/sXrh1fLWC1c2HFl+xwcZllnYfiAOmPOSE9WjXWYxdDV2pFXUlqRWRGLasoL/NvXRPNmbWblfdVDPHOA2WNoxPxreaVl5bmleUjrL4PZA/uZxVkNGSF+BXnhadnFCaeVhvpunpAsQRKndcqT4wu9fITkUnmVLja2LIheTU8rN4zLbU9q8Y4LisHyzNjg1Iye9A9Z+SmpceYT/t1moz/aHBX8AmU+ct9e/AV+xgO+D0HDT2j8UzM08u3BgmO/auRBJpq1/xKpcWGiSF6A5ucXonJR4qpGBPbgYS+jVcGMVmVmRoucohb98yZhM3lo1rZDBfeoPPmnpKRcVM7z5tfDPmZUQWzWUnUt9X+P2LtKpezykzXKok4U+wUFF/mdiFCUvPt7wG+5LNGHheLnQ4rgidJnW4rl3ccHUt74FYS3bUjpaD/w3lgEIChfHosdidf4mX+P3nyFXzNsw+GvnYteDsf/HXti2wD0FQj/pb75DYH6+zWHYL9uNP9KqMEyy6S2BsnEAIN4D3/PgeE3wagfzLQH2cZqJRj3AlnaMbxDpsQ87yil8x2lscPPlNY6/1F65gUl961KJkd6JnOT0jeep/c+x2SeK+DkMgDOzMiEoDKwxcDAEheY6Kmc4kRwUjkD52Shp0VQ2asPgokTzkNljfsIBBePdJttdo8ZwaQPjWi3ONnFeGoVMHDm1wkeMR7DOIV59J2HcdhWndiPradn1AcdiYu3yRbOuM12h9U4SmRYkFRJzRKV4/WTTdUszfTnU5mjTVN5ToY3Rwv9/fJlvJkOIdL/KpwdxoYMDN8bYA==) format('woff2'); }
     #splash {
       position: fixed; inset: 0; z-index: 999;
       display: flex; align-items: center; justify-content: center;
@@ -98,41 +110,39 @@
       transition: opacity .45s ease;
     }
     #splash.gone { opacity: 0; pointer-events: none; }
-    .splash-inner { text-align: center; animation: splash-in .5s ease backwards; }
-    .splash-loader { width: 72px; height: 72px; margin: 0 auto; color: #FF5A3C; }
-    .splash-loader svg { display: block; width: 100%; height: 100%; }
-    .splash-word {
-      margin-top: 14px; font-size: 15px; font-weight: 700; letter-spacing: 3px;
-      color: #F5F1E8; font-family: system-ui, sans-serif;
+    .splash-inner { display: flex; flex-direction: column; align-items: center; color: #F5F1E8; }
+    .splash-lao {
+      font-family: 'PSD Lao', 'Noto Sans Lao', sans-serif; font-size: 15px; line-height: 1.6;
+      opacity: .55; animation: splash-fade .6s ease backwards;
     }
-    @keyframes splash-in { from { opacity:0; transform: translateY(8px) } }
+    .splash-word {
+      display: flex; margin-top: 6px; padding-left: .46em; /* tracking adds space after the last letter; this re-centres it */
+      font-family: 'PSD Word', system-ui, sans-serif; font-weight: 400;
+      font-size: 26px; letter-spacing: .46em; line-height: 1;
+    }
+    .splash-word span { animation: splash-letter .55s cubic-bezier(.2,.7,.2,1) backwards;
+      animation-delay: calc(var(--i) * 45ms + 80ms); }
+    .splash-line {
+      position: relative; overflow: hidden; width: 72px; height: 1px; margin-top: 22px;
+      background: rgba(245,241,232,.14); animation: splash-fade .6s ease .45s backwards;
+    }
+    .splash-line::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 40%;
+      background: linear-gradient(90deg, transparent, #FF5A3C, transparent);
+      animation: splash-run 1.4s ease-in-out .6s infinite; transform: translateX(-100%);
+    }
+    @keyframes splash-fade { from { opacity: 0; } }
+    @keyframes splash-letter { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } }
+    @keyframes splash-run { to { transform: translateX(250%); } }
     @media (prefers-reduced-motion: reduce) {
-      .splash-inner { animation: none; }
+      .splash-lao, .splash-word span, .splash-line { animation: none; }
+      .splash-line::after { animation: none; transform: none; left: 30%; }
     }
 
     [data-theme="light"] #splash { background: #FFFCF5; }
-    [data-theme="light"] .splash-word { color: #2A2419; }
-    [data-theme="light"] .splash-loader { color: #E8462A; }
-
-    /* flame-coloured expanding ring — duplicated from .lring/.lring-arc in
-       css/style.css (see loadingRing() in js/app.js) so the splash paints
-       before that stylesheet or app.js are guaranteed to have run, same
-       reason every other splash rule above is self-contained rather than
-       relying on the external sheet. CSS animations (unlike the SMIL loader
-       this replaced) already respect prefers-reduced-motion on their own —
-       no imperative pause script needed here. */
-    .lring { animation: lring-spin 1.1s linear infinite; transform-origin: 50% 50%; }
-    .lring-arc { animation: lring-sweep 1.4s ease-in-out infinite; }
-    @keyframes lring-spin { to { transform: rotate(360deg); } }
-    @keyframes lring-sweep {
-      0%   { stroke-dashoffset: 100; }
-      50%  { stroke-dashoffset: 40; }
-      100% { stroke-dashoffset: 100; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .lring, .lring-arc { animation: none; }
-      .lring-arc { stroke-dashoffset: 60; }
-    }
+    [data-theme="light"] .splash-inner { color: #2A2419; }
+    [data-theme="light"] .splash-line { background: rgba(42,36,25,.14); }
+    [data-theme="light"] .splash-line::after { background: linear-gradient(90deg, transparent, #E8462A, transparent); }
   </style>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -185,14 +195,9 @@
 <body>
 <div id="splash">
   <div class="splash-inner">
-    <div class="splash-loader" aria-hidden="true"><svg class="lring" width="72" height="72" viewBox="0 0 44 44" aria-hidden="true">
-      <circle class="lring-track" cx="22" cy="22" r="18" fill="none"
-              stroke="currentColor" stroke-width="3" opacity=".16"/>
-      <circle class="lring-arc" cx="22" cy="22" r="18" fill="none"
-              stroke="currentColor" stroke-width="3" stroke-linecap="round"
-              stroke-dasharray="113" stroke-dashoffset="85"/>
-    </svg></div>
-    <div class="splash-word">PAISAIDEE</div>
+    <div class="splash-lao" lang="lo">ໄປໃສດີ</div>
+    <div class="splash-word" role="img" aria-label="Paisaidee"><span style="--i:0">P</span><span style="--i:1">A</span><span style="--i:2">I</span><span style="--i:3">S</span><span style="--i:4">A</span><span style="--i:5">I</span><span style="--i:6">D</span><span style="--i:7">E</span><span style="--i:8">E</span></div>
+    <div class="splash-line" aria-hidden="true"></div>
   </div>
 </div>
 <div id="app">

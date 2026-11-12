@@ -12,5 +12,13 @@
     "bar": [],
     "cafe": [],
     "restaurant": []
-  }
+  },
+  "themes": [
+    { "id": "rooftops", "title": "Rooftops", "title_lo": "ດາດຟ້າ",
+      "_source": "each venue's own description mentions a rooftop",
+      "venue_ids": ["tipsy-elephant", "stellar-bar", "seventh-heaven", "khop-chai-deu"] },
+    { "id": "live-music", "title": "Live music", "title_lo": "ດົນຕີສົດ",
+      "_source": "each venue's own description mentions live bands or live music",
+      "venue_ids": ["blues-box", "wind-west", "status-bar", "go-dunk", "mahasan", "rustic-white", "kong-view", "khop-chai-deu"] }
+  ]
 }

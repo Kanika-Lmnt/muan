@@ -2,7 +2,9 @@
 --
 -- DEPLOY ORDER (CLAUDE.md): run this against production BEFORE deploying the
 -- code that reads it (functions/api/checkin.js, me.js, react.js):
---   npx wrangler d1 execute muan-db --remote --file=migrations/019_challenges_badges_reactions.sql
+--   node scripts/run-migration.js migrations/019_challenges_badges_reactions.sql
+--   (not `wrangler d1 execute --file`: that fails with an auth error here,
+--   see the top of scripts/run-migration.js)
 --   node scripts/check-schema.js
 -- Every statement is IF NOT EXISTS / OR IGNORE, so running it twice is safe.
 

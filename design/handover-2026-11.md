@@ -328,7 +328,8 @@ learning guide.
 ## 18. Challenges, new badges, "How was it?", Lists, map peek (7 Nov)
 
 **Needs migration 019 on production before deploy** (CLAUDE.md rule):
-`npx wrangler d1 execute muan-db --remote --file=migrations/019_challenges_badges_reactions.sql`,
+`node scripts/run-migration.js migrations/019_challenges_badges_reactions.sql`
+(`wrangler d1 execute --file` fails with an auth error for this project),
 then `node scripts/check-schema.js`. It adds two tables (user_challenges,
 user_reactions) and eight badge rows. Safe to run twice.
 

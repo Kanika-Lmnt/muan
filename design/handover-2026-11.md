@@ -384,3 +384,25 @@ user_reactions) and eight badge rows. Safe to run twice.
   instead of showing a spinning ring. loadingRing() stays for actions in
   progress (finding a route, upload %), where a spinner is still the
   right signal.
+
+## 20. New Home top, flat cards, Provinces (13 Nov)
+
+- **Home top** (homeDiscoverHeaderHtml()): the photo hero is gone. A slim
+  row with the PAISAIDEE mark (weather on the right), the question in Lao
+  (ຄືນນີ້ໄປໃສດີ? / ມື້ນີ້ໄປໃສດີ?) with English under it, then a flat search
+  bar that sticks to the top of the sheet while you scroll (a hairline
+  appears under it once it's stuck, observeSearchPin()). Content now starts
+  about halfway up the first screen instead of at the bottom. The Bars /
+  Cafés / Events tabs get the same slim header with the type as the title.
+  HOME_HERO / TYPE_HERO and their photos are unused but kept, so the photo
+  header can come back.
+- **Category row**: icons sit on the page, no tiles and no shadows, with a
+  hairline under the row (Airbnb's pattern). Four now: Bars, Cafés,
+  Events, Provinces.
+- **Flat cards in light mode**: --card-fill/--card-edge/--card-lift are
+  now a white card with a hairline and no drop shadow (dark mode was
+  already flat). This touches every card in the app on purpose.
+- **Provinces** (openProvinces()): all 18 provinces by region, Central
+  first. Vientiane Capital shows the live place count and goes back to
+  Home; the rest say ໄວໆນີ້ · soon. No province content until it's real and
+  sourced. TODO(lao): Kar to check every province name.

@@ -6060,27 +6060,30 @@ function heroVariant(h) {
 
    The hero image is picked from HOME_HERO_IMAGES, once per app open. */
 function homeDiscoverHeaderHtml() {
-  const { photo, veil } = heroVariant(HOME_HERO);
-  const when = isNight() ? 'tonight' : 'today';
+  // Nov 2026 redesign: the photo hero took nearly half the screen before
+  // any place showed. Now a slim brand row (weather on the right), the
+  // question in Lao with English under it, then a flat search bar that
+  // sticks to the top when you scroll (.home-search-bar), then the category
+  // row. HOME_HERO / heroVariant() are unused here now; kept so the photo
+  // header can come back without digging through history.
+  const night = isNight();
   return `
-    <section class="home-hero" aria-label="Paisaidee"${typeof veil === 'number' ? ` style="--hero-veil:${veil}"` : ''}>
-      ${photo ? `<img class="home-hero-img" src="${esc(cloudinaryUrl(photo, 900))}" alt=""
-        style="object-position:${HOME_HERO.objectPosition}" fetchpriority="high">` : ''}
-      <div class="home-hero-scrim"></div>
-      <div class="home-hero-text">
-        <div class="home-hero-brand">${logoMark(18, '#131019')}<span>PAISAIDEE</span></div>
-        <div class="home-hero-lo lao">ໄປໃສດີ</div>
-        <div class="home-hero-en">Where should we go ${when}?</div>
-      </div>
-    </section>
-    <label class="home-search" role="search">
-      <span class="home-search-ico">${icoSearch(18)}</span>
-      <input id="homeSearch" type="search" autocomplete="off" enterkeyhint="search"
-        placeholder="Search places &amp; events" aria-label="Search places and events">
-    </label>
+    <div class="s-subrow home-top">
+      <div class="home-top-brand">${logoMark(16, 'var(--ink)')}<span>PAISAIDEE</span></div>
+      ${weatherWidgetHtml()}
+    </div>
+    <h1 class="home-q"><span class="home-q-lo lao">${night ? 'ຄືນນີ້' : 'ມື້ນີ້'}ໄປໃສດີ?</span>
+      <span class="home-q-en">Where should we go ${night ? 'tonight' : 'today'}?</span></h1>
+    <div id="homeSearchSentinel"></div>
+    <div class="home-search-bar">
+      <label class="home-search" role="search">
+        <span class="home-search-ico">${icoSearch(18)}</span>
+        <input id="homeSearch" type="search" autocomplete="off" enterkeyhint="search"
+          placeholder="Search places &amp; events" aria-label="Search places and events">
+      </label>
+    </div>
     <div id="homeBody">
-      ${homeCategoriesHtml()}
-      <div class="s-subrow home-weather">${weatherWidgetHtml()}</div>`;
+      ${homeCategoriesHtml()}`;
 }
 
 /* The Bars / Cafes / Events hero. Same <section class="home-hero"> as
@@ -6100,24 +6103,17 @@ function homeDiscoverHeaderHtml() {
 function typeHeroHeaderHtml(f) {
   const entry = TYPE_HERO[f];
   if (!entry) return '';
-  const { photo, veil } = heroVariant(entry);
-  // 'event' is not a venue type, so it has no VENUE_TYPE_META row — this is
-  // the same pair of sources homeCategoriesHtml() reads for its labels, and
-  // deliberately the same, so the Lao on the chip, the category button and
-  // the hero can never drift apart.
+  // Nov 2026: the slim header, same as All's (homeDiscoverHeaderHtml()),
+  // with the type as the title. The photo heroes (TYPE_HERO) are unused for
+  // now and kept so they can come back.
   const lo = f === 'event' ? 'ອີເວັນ' : VENUE_TYPE_META[f]?.label_lo || '';
   const en = TYPE_HERO_EN[f] || '';
   return `
-    <section class="home-hero" aria-label="${esc(en)}"${typeof veil === 'number' ? ` style="--hero-veil:${veil}"` : ''}>
-      ${photo ? `<img class="home-hero-img" src="${esc(cloudinaryUrl(photo, 900))}" alt=""
-        style="object-position:${entry.objectPosition}" fetchpriority="high">` : ''}
-      <div class="home-hero-scrim"></div>
-      <div class="home-hero-text">
-        <div class="home-hero-brand">${logoMark(18, '#131019')}<span>PAISAIDEE</span></div>
-        <div class="home-hero-lo lao">${esc(lo)}</div>
-        <div class="home-hero-en">${esc(en)}</div>
-      </div>
-    </section>`;
+    <div class="s-subrow home-top">
+      <div class="home-top-brand">${logoMark(16, 'var(--ink)')}<span>PAISAIDEE</span></div>
+    </div>
+    <h1 class="home-q"><span class="home-q-lo lao">${esc(lo)}</span>
+      <span class="home-q-en">${esc(en)}</span></h1>`;
 }
 
 // round category buttons, one per filter the chip row offers — Bars, Cafes,
@@ -6156,6 +6152,11 @@ const CAT_ICONS = {
     <path d="M7 14a3 3 0 0 1 3-3h28a3 3 0 0 1 3 3v5a5 5 0 0 0 0 10v5a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3v-5a5 5 0 0 0 0-10z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
     <path d="M30 13v22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.5 3" stroke-linecap="round"/>
     <path class="ci-acc" d="m19 16.5 2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/>`,
+  // two mountains and a sun: "go somewhere else in Laos"
+  province: `
+    <circle class="ci-acc" cx="34" cy="13" r="5"/>
+    <path d="M4 39 17.5 18l8 12 5.5-7.5L44 39z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M13.5 24.5 17.5 28l3.5-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
   wheel: `
     <path class="ci-acc" d="M24 25V9.5A15.5 15.5 0 0 1 39.5 25zM24 25v15.5A15.5 15.5 0 0 1 8.5 25z"/>
     <circle cx="24" cy="25" r="15.5" fill="none" stroke="currentColor" stroke-width="2.6"/>
@@ -6180,7 +6181,7 @@ function homeCategoriesHtml() {
   return `<div class="home-cats">${keys.map(k => {
     const l = label(k);
     return tile(`data-cat="${k}"`, CAT_ICONS[k] || CAT_ICONS.event, l.lo, l.en);
-  }).join('')}</div>`;
+  }).join('')}${tile('data-provinces', CAT_ICONS.province, 'ແຂວງ', 'Provinces')}</div>`;
 }
 
 /* "Can't decide?" — the wheel's way in from Home (and the only one on
@@ -6351,6 +6352,77 @@ function openThemeList(id) {
     state.filter = 'all';
     renderHomeSheet();
   }));
+}
+
+/* ---------- Provinces ----------
+   The start of "places worth visiting in every province". All 18, by
+   region; Vientiane Capital is what the app covers today, the rest say
+   soon. Nothing is listed for a province until its places are real and
+   sourced (CLAUDE.md data rules), so this page has no made-up content.
+   TODO(lao): Kar to check every Lao name. */
+const PROVINCES = [
+  { region: 'north', en: 'Phongsaly',          lo: 'ຜົ້ງສາລີ' },
+  { region: 'north', en: 'Luang Namtha',       lo: 'ຫຼວງນ້ຳທາ' },
+  { region: 'north', en: 'Oudomxay',           lo: 'ອຸດົມໄຊ' },
+  { region: 'north', en: 'Bokeo',              lo: 'ບໍ່ແກ້ວ' },
+  { region: 'north', en: 'Luang Prabang',      lo: 'ຫຼວງພະບາງ' },
+  { region: 'north', en: 'Houaphanh',          lo: 'ຫົວພັນ' },
+  { region: 'north', en: 'Xayaboury',          lo: 'ໄຊຍະບູລີ' },
+  { region: 'north', en: 'Xieng Khouang',      lo: 'ຊຽງຂວາງ' },
+  { region: 'central', en: 'Vientiane Capital', lo: 'ນະຄອນຫຼວງວຽງຈັນ', live: true },
+  { region: 'central', en: 'Vientiane Province', lo: 'ແຂວງວຽງຈັນ' },
+  { region: 'central', en: 'Xaisomboun',       lo: 'ໄຊສົມບູນ' },
+  { region: 'central', en: 'Bolikhamxay',      lo: 'ບໍລິຄຳໄຊ' },
+  { region: 'central', en: 'Khammouane',       lo: 'ຄຳມ່ວນ' },
+  { region: 'central', en: 'Savannakhet',      lo: 'ສະຫວັນນະເຂດ' },
+  { region: 'south', en: 'Salavan',            lo: 'ສາລະວັນ' },
+  { region: 'south', en: 'Sekong',             lo: 'ເຊກອງ' },
+  { region: 'south', en: 'Champasak',          lo: 'ຈຳປາສັກ' },
+  { region: 'south', en: 'Attapeu',            lo: 'ອັດຕະປື' },
+];
+const REGIONS = [
+  { id: 'central', en: 'Central', lo: 'ພາກກາງ' },
+  { id: 'north', en: 'North', lo: 'ພາກເໜືອ' },
+  { id: 'south', en: 'South', lo: 'ພາກໃຕ້' },
+];
+
+function openProvinces() {
+  setSheetView({ type: 'provinces', venueId: null });
+  const live = state.venues.filter(v => v.pin_status !== 'pending').length;
+  const card = p => p.live
+    ? `<button type="button" class="prov-card live" data-prov-live>
+        <span class="prov-lo lao">${esc(p.lo)}</span><span class="prov-en">${esc(p.en)}</span>
+        <span class="prov-status">${live} places</span></button>`
+    : `<div class="prov-card" aria-disabled="true">
+        <span class="prov-lo lao">${esc(p.lo)}</span><span class="prov-en">${esc(p.en)}</span>
+        <span class="prov-status"><span class="lao">ໄວໆນີ້</span> · soon</span></div>`;
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title lao">ແຂວງ</div><div class="pg-title-en">Provinces</div></div>
+    </div>
+    <p class="prov-intro">Places worth going to in every province, picked by us. Vientiane Capital is here now, more provinces are on the way.</p>
+    ${REGIONS.map(r => `
+      <div class="prov-region"><span class="lao">${esc(r.lo)}</span> · ${esc(r.en)}</div>
+      <div class="prov-grid">${PROVINCES.filter(p => p.region === r.id).map(card).join('')}</div>`).join('')}
+    <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  const home = () => { state.filter = 'all'; renderHomeSheet(); };
+  document.querySelectorAll('#sheetInner [data-back], #sheetInner [data-prov-live]').forEach(b => b.addEventListener('click', home));
+}
+
+// a hairline under the search bar only while it's stuck to the top, the
+// same signal the pinned chip bar gives (observeChipPin())
+let searchPinObs = null;
+function observeSearchPin() {
+  searchPinObs?.disconnect();
+  const s = document.getElementById('homeSearchSentinel');
+  const bar = document.querySelector('#sheetInner .home-search-bar');
+  if (!s || !bar || !('IntersectionObserver' in window)) return;
+  searchPinObs = new IntersectionObserver(([e]) => bar.classList.toggle('pinned', !e.isIntersecting && e.boundingClientRect.top < 0),
+    { root: document.getElementById('sheet'), threshold: 0 });
+  searchPinObs.observe(s);
 }
 
 /* ---------- "When people go" (venue page) ----------
@@ -8367,6 +8439,8 @@ function setSheet(html) {
   inner.querySelectorAll('[data-cat]').forEach(el =>
     el.addEventListener('click', () =>
       chipBarEl.querySelector(`.chip[data-filter="${el.dataset.cat}"]`)?.click()));
+  inner.querySelector('[data-provinces]')?.addEventListener('click', openProvinces);
+  observeSearchPin();
   inner.querySelectorAll('[data-see-all]').forEach(el =>
     el.addEventListener('click', () =>
       chipBarEl.querySelector(`.chip[data-filter="${el.dataset.seeAll}"]`)?.click()));

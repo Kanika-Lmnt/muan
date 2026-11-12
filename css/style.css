@@ -302,9 +302,14 @@
   /* a bright top edge (dark theme's --card-edge) is invisible on cream, so
      this inverts: a soft shadow beneath instead, and a slightly deeper
      bottom edge rather than a bright top one */
-  --card-fill: linear-gradient(180deg, #FFFDF8 0%, #F7F1E4 100%);
-  --card-edge: inset 0 -1px 0 rgba(90,75,45,.07);
-  --card-lift: 0 1px 3px rgba(90,75,45,.10), 0 4px 12px rgba(90,75,45,.06);
+  /* Nov 2026: flat. Was a cream gradient with a two-layer drop shadow,
+     which on a cream page read as muddy smudges under every card and made
+     everything look like it floated. Now a white surface with a hairline,
+     as night already was; shadows are left to the things that really
+     float (the bottom bar, sheets). */
+  --card-fill: linear-gradient(#FFFFFF, #FFFFFF);
+  --card-edge: inset 0 0 0 1px rgba(90,75,45,.11);
+  --card-lift: 0 0 0 0 transparent;
   --ground: var(--ink);
   /* see --weave in :root. This is the value the texture was drawn for — a
      warm grey thread on cream. */
@@ -629,17 +634,32 @@ body {
 .home-hero-lo { font-size: 38px; font-weight: 700; line-height: 1.15; margin-top: 6px; }
 .home-hero-en { font-size: 15px; font-weight: 600; margin-top: 4px; color: rgba(245,241,232,.92); }
 
-/* the search bar straddles the hero's bottom edge, as in the mockup */
+/* Nov 2026 Home top (homeDiscoverHeaderHtml()): slim brand row, the
+   question, then the search bar, which sticks to the top of the sheet when
+   you scroll. Same full-bleed sticky recipe as #sheet .chip-bar (see the
+   long note there): background on the sticky element itself, top: 0, and
+   negative margins equal to --sheet-pad-x. */
+.home-top { margin-top: 4px; min-height: 28px; }
+.home-top-brand { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: 2.5px; color: var(--bone); }
+.home-q { margin: 14px 0 0; font-weight: 700; }
+.home-q-lo { display: block; font-size: 28px; line-height: 1.25; color: var(--bone); }
+.home-q-en { display: block; font-size: 14px; font-weight: 500; margin-top: 2px; color: var(--secondary); }
+.home-search-bar {
+  position: sticky; top: 0; z-index: 2;
+  margin: 0 calc(-1 * var(--sheet-pad-x)); padding: 14px var(--sheet-pad-x) 10px;
+  background: var(--ground); background-image: var(--weave);
+  transition: box-shadow .2s;
+}
+.home-search-bar.pinned { box-shadow: 0 1px 0 var(--ink4); }
 .home-search {
-  position: relative; z-index: 1;
+  position: relative;
   display: flex; align-items: center; gap: 10px;
-  margin: -28px 2px 0; padding: 0 16px; min-height: 52px; border-radius: 16px;
-  background-color: var(--ink3); background-image: var(--card-fill);
-  /* flat field, no drop shadow: it sits on the photo's lower edge as a
-     surface, not a floating slab */
-  box-shadow: var(--card-edge), var(--card-lift);
+  padding: 0 14px; min-height: 48px; border-radius: 14px;
+  /* a flat field: one step off the page, a hairline, no shadow */
+  background: var(--ink3); box-shadow: inset 0 0 0 1px var(--ink4);
   color: var(--mute); cursor: text;
 }
+[data-theme="light"] .home-search { background: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(90,75,45,.16); }
 .home-search-ico { display: flex; line-height: 0; }
 /* 16px, not the 13–14px the mockup draws: under 16px iOS Safari zooms the
    whole page on focus. outline is removed on the input only because the
@@ -649,13 +669,16 @@ body {
   font-family: var(--font); font-size: 16px; color: var(--bone);
 }
 .home-search input::placeholder { color: var(--secondary); opacity: 1; }
-.home-search:focus-within { box-shadow: var(--card-edge), var(--card-lift), 0 0 0 2px var(--bone); }
+.home-search:focus-within { box-shadow: inset 0 0 0 2px var(--bone); }
 
 /* category tiles (homeCategoriesHtml()): rounded squares with a line icon
    and one coral accent, Lao label over English. The whole column — tile
    and label — is the tap target, well over 44px. Five fit on a 320px
    screen (Bars, Cafes, Events, Restaurants when present, Spin). */
-.home-cats { display: flex; justify-content: space-between; gap: 6px; margin-top: 22px; }
+.home-cats {
+  display: flex; justify-content: space-between; gap: 4px;
+  margin: 6px 0 4px; padding-bottom: 14px; border-bottom: 1px solid var(--ink4);
+}
 .home-cat {
   flex: 1 1 0; min-width: 0; max-width: 84px;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -663,21 +686,21 @@ body {
   font-family: var(--font); color: var(--bone);
   -webkit-tap-highlight-color: transparent;
 }
+/* Nov 2026: the icon sits on the page, no tile and no shadow (Airbnb's
+   category row). The class keeps its old name so nothing else moves. */
 .home-cat-disc {
-  width: 58px; height: 58px; margin-bottom: 7px; border-radius: 19px;
+  width: 44px; height: 40px; margin-bottom: 4px;
   display: flex; align-items: center; justify-content: center;
-  background-color: var(--ink3); background-image: var(--card-fill);
-  box-shadow: var(--card-edge), var(--card-lift); color: var(--bone);
+  color: var(--bone);
   transition: transform .15s cubic-bezier(.3,1.6,.5,1);
 }
-.home-cat-disc svg { width: 32px; height: 32px; }
+.home-cat-disc svg { width: 30px; height: 30px; }
 .home-cat-disc .ci-acc { fill: var(--flame); }
 .home-cat-lo { font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; }
 .home-cat-en { font-size: 11px; font-weight: 500; line-height: 1.2; color: var(--secondary); white-space: nowrap; }
 .home-cat:active .home-cat-disc { transform: scale(.92); }
 @media (max-width: 359px) {
-  .home-cat-disc { width: 52px; height: 52px; border-radius: 17px; }
-  .home-cat-disc svg { width: 28px; height: 28px; }
+  .home-cat-disc svg { width: 26px; height: 26px; }
   .home-cat-lo { font-size: 11.5px; }
 }
 @media (prefers-reduced-motion: reduce) { .home-cat-disc { transition: none; } .home-cat:active .home-cat-disc { transform: none; } }
@@ -4790,3 +4813,20 @@ button.vd-myrx-ask {
 .sk-row + .sk-row { margin-top: 6px; }
 .sk-thumb { width: 48px; height: 48px; border-radius: 10px; flex: none; }
 .sk-row-text { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- Provinces (openProvinces() in js/app.js) ---------- */
+.prov-intro { margin: 0 0 6px; font-size: 14px; line-height: 1.5; color: var(--secondary); }
+.prov-region { margin: 22px 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--secondary); }
+.prov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.prov-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 14px; border: none; border-radius: 14px; min-height: 92px;
+  background-image: var(--card-fill); box-shadow: var(--card-edge);
+  font-family: var(--font); color: var(--bone);
+}
+.prov-lo { font-size: 16px; font-weight: 700; line-height: 1.35; }
+.prov-en { font-size: 12.5px; color: var(--secondary); }
+.prov-status { margin-top: auto; padding-top: 8px; font-size: 12px; font-weight: 600; color: var(--secondary); }
+.prov-card.live { cursor: pointer; box-shadow: inset 0 0 0 1.5px var(--flame); }
+.prov-card.live .prov-status { color: var(--flame-text); }
+.prov-card[aria-disabled="true"] .prov-lo { opacity: .75; }

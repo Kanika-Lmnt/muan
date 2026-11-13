@@ -6385,7 +6385,7 @@ function featureSlides() {
     const photo = f.photo || v.photos?.[0];
     if (!photo) continue;
     slides.push({ kind: 'photo', act: 'venue:' + v.id, photo: cloudinaryUrl(photo, 900),
-      eyebrow: 'Featured · ແນະນຳ', title: v.short_name || v.name, lo: f.line_lo || '', sub: f.line || '' });
+      eyebrow: 'Featured', title: v.short_name || v.name, lo: f.line_lo || '', sub: f.line || '' });
   }
   const live = state.venues.filter(v => v.pin_status !== 'pending').length;
   const { photo } = heroVariant(HOME_HERO);
@@ -7070,7 +7070,8 @@ function renderHomeSheet() {
     rendered = true;
     const railed = mobile && ON_FIRE_CAROUSEL;
     const fireCards = pickVenuesQ.map(v => railed ? railCardHtml(v) : bigCard(v, venueLine(v, esc(v.area || '')))).join('');
-    html += secH('On fire · ໄຟລຸກ', esc(state.picks?.note_en)) +
+    // was 'On fire · ໄຟລຸກ'; renamed ແນະນຳ (recommended) on 13 Nov 2026 at Kar's call
+    html += secH('Recommended · ແນະນຳ', esc(state.picks?.note_en)) +
       (railed ? `<div class="fire-rail">${fireCards}</div>` : fireCards) +
       `<div style="font-size:10.5px;color:var(--secondary);margin-top:8px;">picked by us, not ranked by check-ins</div>`;
   }

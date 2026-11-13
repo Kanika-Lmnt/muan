@@ -432,3 +432,10 @@ user_reactions) and eight badge rows. Safe to run twice.
 - state.me now holds the signed-in /api/me (set at boot and on You) so the
   banner can show challenge progress and open Progress directly.
 - TODO(lao): every Lao line on the slides.
+- **On fire is now ແນະນຳ / Recommended** (13 Nov, Kar's call). Same picks,
+  same data/picks.json; only the heading changed. The banner's venue
+  slides say "Featured" so the two don't share a name.
+- **Pet direction (13 Nov):** a chill tokay gecko (blue-grey, flame-orange
+  spots) replaces Phai, dressed only in items earned from real check-ins.
+  First layered build is a claude.ai artifact ("Tokay Dress-up"); not in
+  the app yet.

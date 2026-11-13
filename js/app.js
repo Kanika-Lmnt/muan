@@ -2558,8 +2558,10 @@ function openProgressSheet(me) {
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.scrollTop = 0;
   document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', openFlameSheet));
+  // clicks on these rows are already wired by setSheet()'s [data-open-venue]
+  // pass; binding click here too opened the venue twice (two history
+  // entries, so Back needed two taps). Only the keyboard path is added here.
   document.querySelectorAll('#sheetInner .pg-recent[data-open-venue]').forEach(el => {
-    el.addEventListener('click', () => openVenue(el.dataset.openVenue));
     el.addEventListener('keydown', e => { if (e.key === 'Enter') openVenue(el.dataset.openVenue); });
   });
 }

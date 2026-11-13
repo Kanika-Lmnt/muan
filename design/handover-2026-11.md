@@ -406,3 +406,10 @@ user_reactions) and eight badge rows. Safe to run twice.
   first. Vientiane Capital shows the live place count and goes back to
   Home; the rest say ໄວໆນີ້ · soon. No province content until it's real and
   sourced. TODO(lao): Kar to check every province name.
+- **No more raised buttons** (later on 13 Nov): the flame buttons and the
+  selected chip lost their solid darker bottom strip (the "pushable" game
+  look). They're plain flame now and shrink slightly when pressed. Light
+  mode's leftover drop shadows (--card-shadow, --card-shadow-big,
+  --plate-shadow) are hairlines too. One shadow token is left,
+  --float-shadow, for things that really float: the bottom bar, the places
+  row over the map, toasts.

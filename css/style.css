@@ -202,6 +202,7 @@
   --plate: var(--ink4);
   --plate-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
   --card-shadow-big: var(--card-edge);
+  --float-shadow: 0 4px 16px rgba(0,0,0,.35);
   /* frosted-glass surfaces (bottom nav, route bar) — matches this theme's
      own --ink so the blur reads as "this surface, translucent" rather than
      an unrelated tint. See the "frosted glass" section below. */
@@ -319,15 +320,18 @@
      shadow instead of the edge+lift stack. See --surface / --card-shadow
      in :root for why these are per-theme rather than shared. */
   --surface: #FFFDF8;
-  --card-shadow: 0 6px 20px rgba(90,75,45,.10);
+  --card-shadow: var(--card-edge);   /* Nov 2026: flat, see --card-lift */
   /* see --plate in :root. Day's plate is the card surface itself — already
      near-white against any photo — so only the shadow separates it. The big
      card's outer shadow keeps the geometry the plain card already had and
      deepens .10 -> .14, since it now has a second shadow inside it to stay
      louder than. */
   --plate: var(--surface);
-  --plate-shadow: 0 2px 10px rgba(90,75,45,.12);
-  --card-shadow-big: 0 6px 20px rgba(90,75,45,.14);
+  --plate-shadow: inset 0 0 0 1px rgba(90,75,45,.10);
+  --card-shadow-big: var(--card-edge);
+  /* the one shadow left: for things that really float over other content
+     (the bottom bar, the places row over the map, toasts) */
+  --float-shadow: 0 4px 16px rgba(90,75,45,.14);
   --frost: rgba(255,252,245,.72);
 }
 :root {
@@ -343,14 +347,10 @@
   --pill-closed: #D8D2E0;
 }
 
-/* pushable-button shadows are hardcoded to the dark-theme flame (#C6432A);
-   darken from the light-theme flame (#E8462A) so the pressed edge still reads */
-[data-theme="light"] .chip.on { box-shadow: 0 3px 0 #AE3520; }
-[data-theme="light"] .cel-done,
-[data-theme="light"] .fl-invite-btn { box-shadow: 0 4px 0 #AE3520; }
-[data-theme="light"] .chip.on:active,
-[data-theme="light"] .cel-done:active,
-[data-theme="light"] .fl-invite-btn:active { box-shadow: 0 1px 0 #AE3520; }
+/* Nov 2026: the "pushable" buttons (a solid darker strip under the flame
+   fill, like a raised game button) are flat now: plain flame, and a small
+   shrink when pressed. The strip made the UI look glossy and 3D next to
+   the flat cards. Shared rule for all of them, below .chip.on. */
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -563,9 +563,9 @@ body {
 }
 .chip.on {
   background: var(--flame); color: var(--on-flame); font-weight: 700; border-color: var(--flame);
-  box-shadow: 0 3px 0 #C6432A;
 }
-.chip.on:active { transform: translateY(2px) scale(.97); box-shadow: 0 1px 0 #C6432A; }
+.chip.on:active, .mi-btn-go:active, .cel-done:active, .fl-invite-btn:active,
+.wheel-btn-go:active:not(:disabled) { transform: scale(.97); }
 /* .chip's display:inline-flex outranks the UA's [hidden] rule, so a chip
    syncTypeChips() hides (a type with no venues yet — see js/app.js) stayed
    on screen. Caught on the Restaurants chip the first time it rendered.
@@ -1137,11 +1137,7 @@ body {
   transition: transform .12s ease, box-shadow .12s ease;
 }
 .mi-btn[hidden] { display: none; }
-.mi-btn-go {
-  flex: 2; background: var(--flame); color: var(--on-flame);
-  box-shadow: 0 4px 0 var(--flame-deep, #B23A22);
-}
-.mi-btn-go:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--flame-deep, #B23A22); }
+.mi-btn-go { flex: 2; background: var(--flame); color: var(--on-flame); }
 .mi-btn-go:disabled { opacity: .7; cursor: progress; }
 .mi-btn-2nd { background: var(--ink3); color: var(--bone); }
 .mi-btn-2nd:active { background: var(--ink4); }
@@ -2371,9 +2367,8 @@ body {
 .cel-done {
   width: 100%; height: 50px; background: var(--flame); color: var(--on-flame);
   border-radius: 16px; font-size: 16px; font-weight: 700; border: none;
-  box-shadow: 0 4px 0 #C6432A; transition: transform .1s;
+  transition: transform .1s;
 }
-.cel-done:active { transform: translateY(3px); box-shadow: 0 1px 0 #C6432A; }
 /* assets/Confetti.svg — overlaid across the card, clipped to its rounded
    corners, above the card content but pointer-events: none so it never
    blocks the "Nice" button underneath. Plays once (see playOnceInto()) */
@@ -2466,9 +2461,8 @@ body {
    own, so height, padding and the centring margin all belong here. */
 .fl-invite-btn {
   height: 46px; margin: 16px auto 0; padding: 0 22px; font-size: 14px;
-  background: var(--flame); color: var(--on-flame); box-shadow: 0 4px 0 #C6432A;
+  background: var(--flame); color: var(--on-flame);
 }
-.fl-invite-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #C6432A; }
 
 /* sized to assets/flame.svg's own ratio (viewBox 500x690); the svg child
    fills this box (its own width/height="100%" attrs get overridden by the
@@ -3314,7 +3308,7 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
   max-width: min(calc(100vw - 32px), 420px);
   padding: 11px 16px; border-radius: 12px;
   background: var(--plate); color: var(--bone);
-  box-shadow: var(--plate-shadow);
+  box-shadow: var(--plate-shadow), var(--float-shadow);
   font-size: 13px; font-weight: 600; line-height: 1.4; text-align: center;
   pointer-events: none; visibility: hidden;
   opacity: 0; transform: translate(-50%, 10px);
@@ -3479,13 +3473,10 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
   font-family: var(--font); font-weight: 700; font-size: 14px;
 }
 .wheel-btn:disabled { opacity: .6; cursor: default; }
-/* the one primary action in this overlay — same flame fill and solid bottom
-   edge as .fl-invite-btn and .cel-done, because it is the same kind of ask */
-.wheel-btn-go { background: var(--flame); color: var(--on-flame); box-shadow: 0 4px 0 #C6432A; }
-.wheel-btn-go:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #C6432A; }
+/* the one primary action in this overlay — same flat flame fill as
+   .fl-invite-btn and .cel-done, because it is the same kind of ask */
+.wheel-btn-go { background: var(--flame); color: var(--on-flame); }
 .wheel-btn-2nd { background: var(--ink3); color: var(--bone); }
-[data-theme="light"] .wheel-btn-go { box-shadow: 0 4px 0 #AE3520; }
-[data-theme="light"] .wheel-btn-go:active:not(:disabled) { box-shadow: 0 1px 0 #AE3520; }
 
 /* ============ mobile: three-screen shell (Home / Map / You) ============
    #app's data-screen attribute (set by setMobileScreen() in app.js) picks
@@ -3631,7 +3622,7 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
        this line alone is the whole opt-out — there is no --weave to
        neutralise separately. */
     background: var(--ground);
-    box-shadow: var(--card-shadow);
+    box-shadow: var(--card-edge), var(--float-shadow);
   }
   /* frosted only where the nav actually floats over the map (data-screen
      "map") — that's the one case with something behind it worth blurring.
@@ -3646,8 +3637,8 @@ body:has(#sheet.collapsed) #sheetToggle { left: 0; }
     /* was var(--card-edge) alone — a bright inset top edge was all a bar
        flush against the screen bottom could use. Now that it floats it
        needs the drop shadow underneath it too, or it reads as a hole cut
-       in the map rather than a card lying on it. Same token the cards use. */
-    box-shadow: var(--card-shadow);
+       in the map rather than a card lying on it. */
+    box-shadow: var(--card-edge), var(--float-shadow);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     /* untextured for the same reason as the base #bottomNav rule above —
@@ -4773,7 +4764,7 @@ button.vd-myrx-ask {
 .peek-card {
   flex: 0 0 auto; width: 220px; scroll-snap-align: start; display: flex; align-items: center; gap: 10px;
   padding: 6px 12px 6px 6px; border: none; border-radius: 16px; cursor: pointer; text-align: left;
-  background: var(--ground); box-shadow: var(--card-shadow); font-family: var(--font); color: var(--bone);
+  background: var(--ground); box-shadow: var(--card-edge), var(--float-shadow); font-family: var(--font); color: var(--bone);
 }
 .peek-card img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
 .peek-body { display: flex; flex-direction: column; min-width: 0; }

@@ -368,6 +368,19 @@ export async function onRequest(context) {
       user.id, venue_id, fourHoursAgo,
       user.id, sixHoursAgo
     ).run();
+    // the privacy policy (legal/privacy.html) promises reported positions
+    // are cleared after 90 days. Done here, on roughly 1 in 20 check-ins,
+    // rather than on a schedule: no cron to set up, the table is small, and
+    // a position can only outlive 90 days by as long as the app goes
+    // without check-ins. Never allowed to fail the check-in itself.
+    if (inserted.meta?.changes && Math.random() < 0.05) {
+      try {
+        const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+        await context.env.DB.prepare(
+          'UPDATE checkins SET lat = NULL, lng = NULL WHERE lat IS NOT NULL AND created_at < ?'
+        ).bind(cutoff).run();
+      } catch (e) { /* best effort */ }
+    }
     if (!inserted.meta?.changes) {
       // lost a race with a concurrent check-in — say which rule it hit
       const again = await context.env.DB.prepare(

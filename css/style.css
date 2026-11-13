@@ -4920,3 +4920,14 @@ button.vd-myrx-ask {
 .lv-row-reward { font-size: 13px; font-weight: 700; color: var(--bone); }
 .lv-row.next { opacity: .75; }
 .lv-here { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--flame-text); padding-right: 4px; }
+
+/* ---------- Welcome: the privacy page (Nov 2026) ---------- */
+.mi-chip.mi-chip-quiet { border-color: var(--ink4); color: var(--bone); }
+.mi-slide-privacy .mi-stage { height: clamp(170px, 30vh, 280px); }
+.mi-slide-privacy .mi-phai-big { width: 130px; }
+.mi-points { margin: 12px 0 0; padding: 0; list-style: none; max-width: 360px; display: flex; flex-direction: column; gap: 9px; }
+.mi-points li { position: relative; padding-left: 22px; font-size: 14.5px; line-height: 1.5; color: var(--secondary); }
+.mi-points li::before { content: ''; position: absolute; left: 4px; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: var(--flame); }
+.mi-agree { margin: 14px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--secondary); max-width: 360px; }
+.mi-agree a, .fl-legal a { color: var(--flame-text); font-weight: 600; }
+.fl-legal { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: var(--secondary); text-align: center; }

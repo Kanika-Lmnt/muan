@@ -1780,6 +1780,7 @@ async function openFlameSheet() {
         <div class="fl-sub">Sign in to check in, keep streaks and earn embers</div>
         <div id="gsi-btn" style="display:flex;justify-content:center;margin:18px 0;"></div>
         <div id="gsi-err" class="hint" style="text-align:center;margin:-6px 0 10px;" hidden></div>
+        <p class="fl-legal">By signing in you agree to the ${legalLinks()}.</p>
         ${savedCardHtml()}
         <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       </div>
@@ -2793,6 +2794,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
 
       <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       <button class="fl-signout" data-sign-out>Sign out</button>
+      <p class="fl-legal"><a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> · <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a></p>
     </div>
   `);
   const sheet = document.getElementById('sheet');
@@ -5306,14 +5308,30 @@ const WELCOME_SLIDES = [
     phai: 'phai-looking-over',
     titleLo: 'ໃກ້ຂ້ອຍ',
     title: 'Close to you',
-    body: 'Turn on location to sort places by distance and get directions. We only keep it when you check in.',
+    body: 'Turn on location to sort places by distance and get directions. It stays on your phone, and only reaches us when you check in or ask for directions.',
   },
   {
     key: 'flame',
     phai: 'phai-idle',
     titleLo: 'ເຊັກອິນ',
-    title: 'Check in, keep your flame lit',
-    body: 'Out somewhere? Check in to earn embers and watch Phai grow. Sign in with Google from the You tab whenever you like.',
+    title: 'Check in, level up',
+    body: 'At a place? Check in. A new place earns 25 embers, embers raise your level, and there are badges and a new challenge every month. You have to really be there. Sign in with Google from the You tab whenever you like.',
+  },
+  // Nov 2026: what a person should know before they hand over location and
+  // a Google account, and the one place the terms and privacy policy are
+  // agreed to. Points match legal/privacy.html; change both together.
+  // TODO(lao): ຂໍ້ມູນຂອງເຈົ້າ ("your data")
+  {
+    key: 'privacy',
+    phai: 'phai-looking-over',
+    chip: 'Private by default',
+    titleLo: 'ຂໍ້ມູນຂອງເຈົ້າ',
+    title: 'Your data stays yours',
+    points: [
+      'Browsing needs no account.',
+      'Your check-ins, ratings and rankings are only visible to you. Places show counts, never names.',
+      'Signing in keeps your Google ID and a username. No email, no contacts.',
+    ],
   },
 ];
 
@@ -5340,6 +5358,12 @@ function welcomeOpenLine() {
   return live.length ? `<div class="mi-live mi-live-quiet">Hours for all ${live.length} places</div>` : '';
 }
 
+// "Terms of Use and Privacy Policy", each opening its page in a new tab
+// (legal/*.html, shipped with the website and the app's copy of it)
+function legalLinks() {
+  return `<a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>`;
+}
+
 function welcomeSlideHtml(s, i) {
   const photo = welcomePhoto(s);
   const art = photo
@@ -5349,17 +5373,19 @@ function welcomeSlideHtml(s, i) {
          <span class="mi-glow"></span>
          ${[0, 1, 2, 3, 4, 5].map(n => `<span class="mi-ember mi-ember-${n}"></span>`).join('')}
          <img class="mi-phai-big" src="assets/mascot/${s.phai}.svg" alt="" width="200" height="240" draggable="false">
-         <span class="mi-chip">+25 embers · first visit</span>
+         <span class="mi-chip${s.chip ? ' mi-chip-quiet' : ''}">${esc(s.chip || '+25 embers · first visit')}</span>
        </div>`;
   const extra = s.key === 'open' ? welcomeOpenLine()
     : s.key === 'near' ? '<div class="mi-loc" data-mi-loc aria-live="polite"></div>'
+    : s.key === 'privacy' ? `<p class="mi-agree">By using Paisaidee you agree to the ${legalLinks()}.</p>`
     : '';
   return `<div class="mi-slide mi-slide-${s.key}" data-mi-index="${i}">
     <div class="mi-art">${art}</div>
     <div class="mi-copy">
       <div class="mi-title lao">${esc(s.titleLo)}</div>
       <div class="mi-title-en">${esc(s.title)}</div>
-      <p class="mi-sub">${esc(s.body)}</p>
+      ${s.body ? `<p class="mi-sub">${esc(s.body)}</p>` : ''}
+      ${s.points ? `<ul class="mi-points">${s.points.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${extra}
     </div>
   </div>`;

@@ -455,3 +455,23 @@ user_reactions) and eight badge rows. Safe to run twice.
   links and sign out. Badges, avatar items, Next up and Your rankings moved
   to Progress. The old flame card and identity card functions are unused
   now but kept.
+
+## 23. Onboarding, privacy policy and terms (13 Nov)
+
+- **Welcome now has 5 pages (+ the mood page):** what it is · real hours ·
+  location (now says exactly when it leaves the phone) · check in and level
+  up (25 embers, levels, badges, monthly challenge, must really be there) ·
+  **new: Your data stays yours** (no account needed, check-ins and ratings
+  private, sign-in keeps only Google ID + username), with "By using
+  Paisaidee you agree to the Terms of Use and Privacy Policy".
+- **legal/privacy.html and legal/terms.html**: written from what the code
+  actually does (checked against schema, checkin.js, route.js, auth). Marked
+  DRAFT with [operator] and [contact email] to fill in, Lao summary to
+  translate, legal check recommended. Linked from welcome, under the
+  Google sign-in button, and at the bottom of You. Added to the app build
+  (app/build-www.mjs PARTS).
+- **Check-in positions are now cleared after 90 days** (checkin.js, on ~1 in
+  20 check-ins), because the policy says so. schema.sql always said "purge
+  >90d"; nothing did it until now.
+- **Still missing for the App Store:** in-app "Delete my account". Apple
+  requires it. Until then the policy says to email.

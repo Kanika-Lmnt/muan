@@ -26,7 +26,7 @@ if (!/^https?:\/\/[^/]+$/.test(server)) {
 
 // what the website is made of — everything else in the repo (functions,
 // migrations, design notes, this folder) stays out of the app
-const PARTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'assets', 'data'];
+const PARTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'assets', 'data', 'legal'];
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });

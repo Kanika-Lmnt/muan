@@ -413,3 +413,22 @@ user_reactions) and eight badge rows. Safe to run twice.
   --plate-shadow) are hairlines too. One shadow token is left,
   --float-shadow, for things that really float: the bottom bar, the places
   row over the map, toasts.
+
+## 21. Featured banner (13 Nov)
+
+- **featureBannerHtml()** on Home, under the category row: one wide
+  swipeable banner with dots, moving on by itself every 6s (paused for 10s
+  after a touch, never with reduced motion, never while scrolled away).
+  The sheet's sideways tab-swipe ignores it (and the Lists rail, which it
+  wasn't ignoring before: a small bug fixed here).
+- Slides, in order: anything in picks.json `featured` (empty for now; each
+  is { "venue", "line", "line_lo", "photo"? }), then the app's own: That
+  Luang photo "52 places on one map" (opens Map), your flame, this month's
+  challenge (real progress when signed in), the wheel (only if 2+ places
+  are open), 13 badges, Top lists.
+- Wording rule: nothing is a "prize". Collect/unlock, never win. A paid
+  slot would have to say "Sponsored".
+- Phai art on the flame slide is a placeholder until the new pet exists.
+- state.me now holds the signed-in /api/me (set at boot and on You) so the
+  banner can show challenge progress and open Progress directly.
+- TODO(lao): every Lao line on the slides.

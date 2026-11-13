@@ -856,6 +856,7 @@ async function boot() {
         // where this person has been, for the Top lists' "been" marks
         state.myCounts = me.venue_counts || {};
         state.myReactions = me.reactions || {};
+        state.me = me;
         if (state.screen === 'home' && state.sheetView?.type === 'home') {
           const sh = document.getElementById('sheet');
           const y = sh ? sh.scrollTop : 0;
@@ -2695,6 +2696,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   // the Top lists mark places you've been (topRowHtml()) from this
   state.myCounts = me.venue_counts || {};
   state.myReactions = me.reactions || {};
+  state.me = me;
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
 
@@ -6083,7 +6085,8 @@ function homeDiscoverHeaderHtml() {
       </label>
     </div>
     <div id="homeBody">
-      ${homeCategoriesHtml()}`;
+      ${homeCategoriesHtml()}
+      ${featureBannerHtml()}`;
 }
 
 /* The Bars / Cafes / Events hero. Same <section class="home-hero"> as
@@ -6351,6 +6354,128 @@ function openThemeList(id) {
   document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', () => {
     state.filter = 'all';
     renderHomeSheet();
+  }));
+}
+
+/* ---------- Featured banner (top of Home, under the category row) ----------
+   One wide swipeable banner, 3–6 slides, moving on by itself every 6s
+   (never with reduced motion, and never while someone is touching it).
+   Two kinds of slide:
+     - picks.json "featured": places Kar chooses to feature, first in line.
+       Each is { "venue": "<id>", "line": "...", "line_lo": "...",
+       "photo": "<cloudinary id, optional>" }. Empty for now.
+     - the app's own slides (below): the map, your flame, this month's
+       challenge, the wheel, badges, Top lists. These teach people what the
+       app does, need no venue photos, and use real data where they can
+       (your challenge progress, how many places are open).
+   Wording rule: nothing here is a prize. Embers and badges are "collect" /
+   "unlock", never "win". A paid feature would have to say "Sponsored".
+   The art is placeholder (Phai) until the new mascot exists.
+   TODO(lao): every Lao line on these slides. */
+const FEAT_ICON_FLAG = `<svg viewBox="0 0 48 48" width="64" height="64" aria-hidden="true">
+  <path d="M12 42V7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M12 8h24l-5 8 5 8H12z" fill="var(--flame)" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
+
+function featureSlides() {
+  const me = state.me && !state.me.signed_out ? state.me : null;
+  const slides = [];
+  for (const f of state.picks?.featured || []) {
+    const v = venueById(f.venue);
+    if (!v || v.pin_status === 'pending') continue;
+    const photo = f.photo || v.photos?.[0];
+    if (!photo) continue;
+    slides.push({ kind: 'photo', act: 'venue:' + v.id, photo: cloudinaryUrl(photo, 900),
+      eyebrow: 'Featured · ແນະນຳ', title: v.short_name || v.name, lo: f.line_lo || '', sub: f.line || '' });
+  }
+  const live = state.venues.filter(v => v.pin_status !== 'pending').length;
+  const { photo } = heroVariant(HOME_HERO);
+  slides.push({ kind: 'photo', act: 'map', photo: photo ? cloudinaryUrl(photo, 900) : '',
+    eyebrow: 'Vientiane', title: `${live} places on one map`, lo: 'ເບິ່ງແຜນທີ່', cta: 'Open the map' });
+  slides.push({ kind: 'art', tone: 'flame', act: 'you', art: `<img src="assets/mascot/phai-delighted.svg" alt="" width="92" height="110" draggable="false">`,
+    title: 'Your flame grows every time you go out', lo: 'ໄຟຂອງເຈົ້າ',
+    cta: me ? 'See your flame' : 'Start your flame' });
+  const ch = me?.challenge;
+  slides.push({ kind: 'art', tone: 'gold', act: me ? 'progress' : 'you', art: FEAT_ICON_FLAG,
+    eyebrow: "This month's challenge", lo: 'ສິ່ງທ້າທາຍປະຈຳເດືອນ',
+    title: ch ? ch.title : 'A new challenge every month',
+    sub: ch ? (ch.done ? 'Done · +50 embers added' : `${ch.have} of ${ch.need} done · +${ch.embers} embers`) : 'Finish it for +50 embers',
+    progress: ch && !ch.done ? Math.min(1, ch.have / ch.need) : null });
+  const open = wheelCandidates('all').length;
+  if (open >= 2) slides.push({ kind: 'art', tone: 'ink', act: 'wheel',
+    art: `<svg viewBox="0 0 48 48" width="70" height="70" aria-hidden="true" class="feat-wheel">${CAT_ICONS.wheel}</svg>`,
+    title: "Can't decide? Let Phai pick", lo: 'ເລືອກບໍ່ຖືກບໍ?', sub: `One of the ${open} places open right now` });
+  slides.push({ kind: 'art', tone: 'gold', act: me ? 'progress' : 'you',
+    art: `<span class="feat-badges">${['night-owl', 'bar-hopper', 'sunset'].map(id => `<span>${badgeIcon({ id }, 26)}</span>`).join('')}</span>`,
+    title: '13 badges to unlock', lo: 'ສະສົມຫຼຽນ', sub: 'Night Owl, Bar Hopper, Sunset…' });
+  slides.push({ kind: 'art', tone: 'ink', act: 'top',
+    art: `<span class="feat-rank"><b>1</b><b>2</b><b>3</b></span>`,
+    title: 'Where Vientiane went this month', lo: 'ອັນດັບ', sub: 'Top bars and cafés, by real check-ins' });
+  return slides;
+}
+
+function featureBannerHtml() {
+  const slides = featureSlides();
+  if (!slides.length) return '';
+  const slide = (x, i) => {
+    const text = `<span class="feat-text">
+        ${x.eyebrow ? `<span class="feat-eyebrow">${esc(x.eyebrow)}</span>` : ''}
+        ${x.lo ? `<span class="feat-lo lao">${esc(x.lo)}</span>` : ''}
+        <span class="feat-title">${esc(x.title)}</span>
+        ${x.sub ? `<span class="feat-sub">${esc(x.sub)}</span>` : ''}
+        ${x.progress != null ? `<span class="feat-bar"><i style="width:${Math.round(x.progress * 100)}%"></i></span>` : ''}
+        ${x.cta ? `<span class="feat-cta">${esc(x.cta)} ›</span>` : ''}
+      </span>`;
+    return x.kind === 'photo'
+      ? `<button type="button" class="feat-slide feat-photo" data-feat="${esc(x.act)}" aria-label="${esc(x.title)}">
+          ${x.photo ? `<img src="${esc(x.photo)}" alt="" draggable="false"${i ? ' loading="lazy"' : ''}>` : ''}<span class="feat-scrim"></span>${text}</button>`
+      : `<button type="button" class="feat-slide feat-${x.tone}" data-feat="${esc(x.act)}" aria-label="${esc(x.title)}">
+          ${text}<span class="feat-art">${x.art}</span></button>`;
+  };
+  return `<div class="feat" aria-roledescription="carousel" aria-label="Featured">
+    <div class="feat-rail">${slides.map(slide).join('')}</div>
+    <div class="feat-dots" aria-hidden="true">${slides.map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>
+  </div>`;
+}
+
+let featTimer = null;
+function initFeatureBanner(root) {
+  clearInterval(featTimer); featTimer = null;
+  const rail = root.querySelector('.feat-rail');
+  if (!rail) return;
+  const dots = [...root.querySelectorAll('.feat-dots i')];
+  const n = rail.children.length;
+  const current = () => Math.round(rail.scrollLeft / (rail.children[0]?.offsetWidth + 10 || 1));
+  let raf = 0;
+  rail.addEventListener('scroll', () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { const c = current(); dots.forEach((d, i) => d.classList.toggle('on', i === c)); });
+  }, { passive: true });
+  let pausedUntil = 0;
+  const pause = () => { pausedUntil = Date.now() + 10000; };
+  rail.addEventListener('pointerdown', pause, { passive: true });
+  rail.addEventListener('touchstart', pause, { passive: true });
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches && n > 1) {
+    featTimer = setInterval(() => {
+      if (!rail.isConnected) { clearInterval(featTimer); return; }
+      if (document.hidden || Date.now() < pausedUntil) return;
+      const r = rail.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;           // scrolled out of view
+      const next = (current() + 1) % n;
+      rail.scrollTo({ left: rail.children[next].offsetLeft - rail.children[0].offsetLeft, behavior: 'smooth' });
+    }, 6000);
+  }
+  rail.querySelectorAll('[data-feat]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.feat;
+    if (a.startsWith('venue:')) return openVenue(a.slice(6));
+    if (a === 'map') return document.querySelector('#bottomNav [data-nav="map"]')?.click();
+    if (a === 'you') return openFlameSheet();
+    if (a === 'progress') return state.me ? openProgressSheet(state.me) : openFlameSheet();
+    if (a === 'wheel') return openWheel({ filter: 'all' });
+    if (a === 'top') {
+      const t = document.querySelector('#sheetInner .top-list');
+      const sh = document.getElementById('sheet');
+      if (t && sh) sh.scrollTo({ top: sh.scrollTop + t.getBoundingClientRect().top - 180, behavior: 'smooth' });
+    }
   }));
 }
 
@@ -8196,6 +8321,7 @@ function initSheetDrag() {
   // else on the sheet.
   const canSwipeX = e => !sheet.classList.contains('expanded')
     && !e.target.closest('.hcards') && !e.target.closest('.fire-rail')
+    && !e.target.closest('.feat-rail') && !e.target.closest('.theme-rail')
     && !e.target.closest('#sheet .chip-bar')
     && !e.target.closest('#sheetHandle');
 
@@ -8440,6 +8566,7 @@ function setSheet(html) {
     el.addEventListener('click', () =>
       chipBarEl.querySelector(`.chip[data-filter="${el.dataset.cat}"]`)?.click()));
   inner.querySelector('[data-provinces]')?.addEventListener('click', openProvinces);
+  initFeatureBanner(inner);
   observeSearchPin();
   inner.querySelectorAll('[data-see-all]').forEach(el =>
     el.addEventListener('click', () =>

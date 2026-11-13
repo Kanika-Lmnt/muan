@@ -4821,3 +4821,58 @@ button.vd-myrx-ask {
 .prov-card.live { cursor: pointer; box-shadow: inset 0 0 0 1.5px var(--flame); }
 .prov-card.live .prov-status { color: var(--flame-text); }
 .prov-card[aria-disabled="true"] .prov-lo { opacity: .75; }
+
+/* ---------- Featured banner (featureBannerHtml() in js/app.js) ----------
+   One slide wide with a sliver of the next one showing, so it reads as
+   swipeable. Flat colour panels (no shadows): flame wash for your flame,
+   gold wash for the challenge and badges (gold is the rewards colour),
+   a plain surface for the rest. Photo slides carry white text on a left
+   scrim in both themes. */
+.feat { margin: 16px 0 6px; }
+.feat-rail {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+  margin: 0 calc(-1 * var(--sheet-pad-x)); padding: 0 var(--sheet-pad-x); scroll-padding-inline: var(--sheet-pad-x);
+  touch-action: pan-x pan-y;
+}
+.feat-rail::-webkit-scrollbar { display: none; }
+.feat-slide {
+  position: relative; flex: 0 0 calc(100% - 22px); scroll-snap-align: start; overflow: hidden;
+  display: flex; align-items: stretch; min-height: 150px; padding: 0; border: none; border-radius: 18px;
+  text-align: left; cursor: pointer; font-family: var(--font); color: var(--bone);
+  -webkit-tap-highlight-color: transparent; transition: transform .15s;
+}
+.feat-slide:active { transform: scale(.985); }
+.feat-text { position: relative; z-index: 1; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 16px 0 16px 18px; }
+.feat-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; opacity: .75; }
+.feat-lo { font-size: 14px; font-weight: 700; line-height: 1.35; }
+.feat-title { font-size: 18px; font-weight: 700; line-height: 1.2; }
+.feat-sub { font-size: 12.5px; line-height: 1.35; opacity: .8; margin-top: 2px; }
+.feat-cta { margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--flame-text); }
+.feat-bar { display: block; width: 78%; height: 6px; border-radius: 3px; margin-top: 8px; background: rgba(0,0,0,.10); overflow: hidden; }
+.feat-bar i { display: block; height: 100%; background: var(--flame); border-radius: inherit; }
+.feat-art { flex: 0 0 auto; width: 118px; display: flex; align-items: center; justify-content: center; padding-right: 10px; color: var(--bone); }
+.feat-art img { width: 92px; height: auto; }
+.feat-flame { background: var(--wash-flame); }
+.feat-gold  { background: rgba(255,194,75,.16); }
+[data-theme="light"] .feat-gold { background: #FBEFD2; }
+.feat-ink   { background: var(--ink3); }
+[data-theme="light"] .feat-ink { background: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(90,75,45,.11); }
+.feat-wheel .ci-acc { fill: var(--flame); }
+.feat-badges { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.feat-badges span { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ground); color: var(--gold); }
+.feat-badges span:first-child { grid-column: span 2; justify-self: center; }
+.feat-rank { display: flex; align-items: flex-end; gap: 5px; height: 70px; }
+.feat-rank b { width: 24px; border-radius: 6px 6px 3px 3px; display: flex; justify-content: center; padding-top: 4px; font-size: 13px; color: var(--on-flame); background: var(--flame); }
+.feat-rank b:nth-child(1) { height: 70px; order: 2; }
+.feat-rank b:nth-child(2) { height: 52px; order: 1; opacity: .75; }
+.feat-rank b:nth-child(3) { height: 40px; order: 3; opacity: .55; }
+/* photo slide: white text on a scrim, both themes */
+.feat-photo { background: #242126; color: #F5F1E8; }
+.feat-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.feat-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(20,18,21,.82), rgba(20,18,21,.45) 60%, rgba(20,18,21,.15)); }
+.feat-photo .feat-text { padding-right: 18px; }
+.feat-photo .feat-cta { color: #FF8A70; }
+.feat-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.feat-dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink4); transition: width .25s, background .25s; }
+.feat-dots i.on { width: 18px; background: var(--flame); }
+@media (prefers-reduced-motion: reduce) { .feat-dots i { transition: none; } }

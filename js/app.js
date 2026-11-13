@@ -5288,7 +5288,7 @@ const WELCOME_SLIDES = [
     phai: 'phai-idle',
     titleLo: 'ໄປໃສດີ?',
     title: 'Where should we go?',
-    body: 'Cafés, bars and what’s on in Vientiane — every place checked by us, not scraped off the internet.',
+    body: 'Cafés, bars and what’s on in Vientiane, every place added by hand, not scraped off the internet.',
   },
   {
     key: 'open',

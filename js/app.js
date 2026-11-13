@@ -1926,6 +1926,105 @@ function flameInviteHtml(flameHtml, totalCheckins) {
 // numbers, no week markers, no scale — so it was decoration; the same data
 // as a sentence ("3 nights out in September") is the thing the dots were
 // standing in for.
+/* ---------- Levels ----------
+   One number that always moves. Level comes from your embers total, so
+   nothing new is stored: it's worked out here from /api/me's embers_total.
+   Each level costs 25 more than the last (50, 75, 100, …), so the first
+   few come within days and later ones take weeks:
+     L2 50 · L3 125 · L5 350 · L10 1,350 · L15 2,975 · L20 5,225 embers.
+   At about 2 nights out a week (new places and repeats, plus the monthly
+   challenge) that's L5 in a month, L10 in about three, L20 in about a year.
+   The "next" line only names rewards that exist today (Phai's stages, at
+   phai_thresholds). Level rewards for the new pet come with the pet. */
+const LEVEL_CAP = 50;
+function levelInfo(embers) {
+  let level = 1, floor = 0, cost = 50;
+  while (level < LEVEL_CAP && embers >= floor + cost) { floor += cost; level++; cost += 25; }
+  return { level, floor, next: level < LEVEL_CAP ? floor + cost : null, into: embers - floor, need: cost };
+}
+function levelOfEmbers(e) { return levelInfo(e).level; }
+
+function levelCardHtml(me, flameHtml, monthName) {
+  const e = me.embers_total || 0, L = levelInfo(e);
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const ni = PHAI_STAGES.indexOf(me.phai_stage) + 1;
+  const nextStage = ni > 0 && ni < PHAI_STAGES.length ? { st: PHAI_STAGES[ni], at: t[ni] } : null;
+  const nights = (me.checkin_days || []).length;
+  const streak = me.streak_now ?? me.streak_months ?? 0;
+  return `
+    <div class="fl-card fl-card-level">
+      <div class="lv-top">
+        <div class="fl-flame lv-flame" data-heat="${me.heat_level}">${flameHtml}</div>
+        <div class="lv-main">
+          <div class="lv-label">Level <b>${L.level}</b></div>
+          <div class="lv-stage">${esc(STAGE_LABELS[me.phai_stage] || '')} · <span class="lao">${esc(STAGE_LO[me.phai_stage] || '')}</span></div>
+        </div>
+        <div class="lv-embers"><b>${e.toLocaleString('en')}</b><span>embers</span></div>
+      </div>
+      ${L.next != null
+        ? `${goalBarHtml(L.into / L.need)}<div class="lv-next"><b>${L.next - e}</b> embers to Level ${L.level + 1}</div>`
+        : `<div class="lv-next">The top level. Every night out still counts.</div>`}
+      ${nextStage ? `<div class="lv-reward">Next: Phai grows into <b>${esc(STAGE_LABELS[nextStage.st])}</b> at Level ${levelOfEmbers(nextStage.at)}</div>` : ''}
+      <div class="lv-facts">
+        <span>${plural(nights, 'night', 'nights')} out in ${esc(monthName)}</span>
+        ${streak > 0 ? `<span>${streak}-month streak</span>` : ''}
+      </div>
+      <button type="button" class="fl-progress-link" data-open-progress>See all your progress ›</button>
+    </div>`;
+}
+
+// Progress: the ladder around where you are (two back, five ahead),
+// with Phai's stages marked on the level they arrive at
+function levelLadderHtml(me) {
+  const e = me.embers_total || 0, L = levelInfo(e);
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const stageAt = {};
+  PHAI_STAGES.forEach((st, i) => { if (i) stageAt[levelOfEmbers(t[i])] = st; });
+  const from = Math.max(1, L.level - 2), to = Math.min(LEVEL_CAP, L.level + 5);
+  let floor = 0, cost = 50;
+  const rows = [];
+  for (let n = 1; n <= to; n++) {
+    if (n >= from) {
+      const st = n < L.level ? 'done' : n === L.level ? 'now' : 'next';
+      rows.push(`<div class="lv-row ${st}">
+        <span class="lv-n">${n}</span>
+        <span class="lv-row-body"><span class="lv-row-at">${floor.toLocaleString('en')} embers</span>
+          ${stageAt[n] ? `<span class="lv-row-reward">Phai becomes ${esc(STAGE_LABELS[stageAt[n]])}</span>` : ''}
+          ${st === 'now' && L.next != null ? goalBarHtml(L.into / L.need) : ''}</span>
+        ${st === 'done' ? '<span class="pg-tick" aria-label="reached">✓</span>' : st === 'now' ? '<span class="lv-here">you</span>' : ''}
+      </div>`);
+    }
+    floor += cost; cost += 25;
+  }
+  return `<div class="lv-ladder">${rows.join('')}</div>
+    <div class="fl-goal-tip">A new place earns <b>${me.ember_new_venue || 25}</b> embers, going back earns ${me.ember_repeat || 5}, and this month's challenge adds 50.</div>`;
+}
+
+// the top of You: who you are, small. Same ids as the old identity card
+// (#pfpBtn, #pfpLink, #pfpFile, #pfpErr) so js/avatar.js wires it as before.
+function profileHeaderHtml(me, avatarIndex, items) {
+  const earnedIds = items.filter(it => it.earned).map(it => it.id);
+  const chibi = avatarIndex !== null ? avatarSVG(+avatarIndex, 64, earnedIds) : '😊';
+  return `
+    <div class="pf-head">
+      <button type="button" class="fl-avatar pf-avatar" id="pfpBtn" aria-label="${me.avatar_url ? 'Change your photo' : 'Add a photo'}">
+        ${me.avatar_url ? `<img class="fl-avatar-photo" src="${esc(cloudinaryAvatarUrl(me.avatar_url, 128))}" alt="">` : chibi}
+      </button>
+      <div class="pf-who">
+        <div class="pf-name">${me.handle ? `@${esc(me.handle)}` : 'You'}</div>
+        <div class="pf-sum">${plural(me.venues_explored || 0, 'place', 'places')} · ${plural(me.total_checkins || 0, 'check-in', 'check-ins')}</div>
+        <div class="pf-actions">
+          <button class="fl-avatar-link" id="pfpLink">${me.avatar_url ? 'Change photo' : 'Add a photo'}</button>
+          ${me.avatar_url
+            ? `<button class="fl-avatar-link" data-remove-pfp>Remove</button>`
+            : `<button class="fl-avatar-link" data-open-avatar>Change avatar</button>`}
+        </div>
+      </div>
+      <input type="file" id="pfpFile" accept="image/*" hidden>
+    </div>
+    <div class="fl-pfp-err" id="pfpErr"></div>`;
+}
+
 function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName) {
   const nights = me.checkin_days.length;
   return `
@@ -2443,11 +2542,14 @@ function openProgressSheet(me) {
         <div><b>${me.total_checkins}</b><span>check-ins</span></div>
       </div>
 
+      <div class="fl-card"><div class="fl-card-h">Levels</div>${levelLadderHtml(me)}</div>
       ${challengeCardHtml(me)}
+      ${nextUpHtml(me, itemProgress(me.venue_counts || {}), STAGE_LABELS, STAGE_LO)}
       <div class="fl-card"><div class="fl-card-h">Phai's path</div>${phaiPathHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">Monthly streak</div>${streakMonthsHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">Badges · ${(me.badges || []).length} of ${(me.all_badges || []).length || (me.badges || []).length}</div>${badgeProgressHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">Avatar items</div>${itemProgressListHtml(me)}</div>
+      ${myRankingsHtml()}
       <div class="fl-card"><div class="fl-card-h">Latest check-ins</div>${recentCheckinsHtml(me)}</div>
       <div class="fl-card"><div class="fl-card-h">How embers work</div>${emberSourcesHtml(me)}</div>
 
@@ -2646,21 +2748,25 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   // the one branch the whole screen turns on — see FLAME_INVITE_BELOW
   const inviting = me.total_checkins < FLAME_INVITE_BELOW;
 
+  /* Nov 2026: simplified. You is now who you are, your level, this
+     month's challenge, your places and your saved list. Everything else
+     (badges, avatar items, Next up, rankings, Phai's path, streak months,
+     how embers work) lives one tap away on Progress, where people who
+     want detail go looking for it. flameCardHtml(), identityCardHtml() and
+     nextUpHtml() stay in the file; Progress still uses nextUpHtml(). */
   setSheet(`
     <div class="fl-wrap">
 
+      ${profileHeaderHtml(me, avatarIndex, items)}
+
       ${inviting
         ? flameInviteHtml(flameHtml, me.total_checkins)
-        : flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName)}
+        : levelCardHtml(me, flameHtml, monthName)}
 
       ${challengeCardHtml(me)}
       ${recapCardHtml(me)}
-      ${inviting ? '' : nextUpHtml(me, items, stageLabels, stageLo)}
       ${yourCityHtml(me)}
-      ${myRankingsHtml()}
       ${savedCardHtml()}
-
-      ${identityCardHtml(me, avatarIndex, items)}
 
       <div class="fl-links">
         ${!myVenuesResult.ok ? `

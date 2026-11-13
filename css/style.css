@@ -4876,3 +4876,47 @@ button.vd-myrx-ask {
 .feat-dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--ink4); transition: width .25s, background .25s; }
 .feat-dots i.on { width: 18px; background: var(--flame); }
 @media (prefers-reduced-motion: reduce) { .feat-dots i { transition: none; } }
+
+/* ---------- You, simplified (Nov 2026): profile header, level card ----------
+   profileHeaderHtml() / levelCardHtml() / levelLadderHtml() in js/app.js */
+.pf-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; text-align: left; }
+.fl-card-level, .lv-ladder { text-align: left; }
+.pf-avatar.fl-avatar { width: 64px; height: 64px; margin: 0; flex: none; font-size: 30px; }
+.pf-who { min-width: 0; }
+.pf-name { font-size: 18px; font-weight: 700; color: var(--bone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-sum { font-size: 13px; color: var(--secondary); margin-top: 2px; }
+.pf-actions { display: flex; gap: 14px; margin-top: 4px; }
+.pf-actions .fl-avatar-link { padding: 0; margin: 0; font-size: 12.5px; }
+.fl-pfp-err:not(:empty) { margin: -10px 0 14px; }
+
+.fl-card-level { display: flex; flex-direction: column; }
+.lv-top { display: flex; align-items: center; gap: 12px; }
+.lv-flame.fl-flame { width: 56px; height: 64px; margin: 0; flex: none; display: flex; align-items: center; justify-content: center; }
+.lv-flame.fl-flame svg { width: 56px; height: 64px; }
+.lv-main { flex: 1; min-width: 0; }
+.lv-label { font-size: 15px; font-weight: 600; color: var(--secondary); }
+.lv-label b { font-size: 30px; line-height: 1; color: var(--bone); margin-left: 4px; }
+.lv-stage { font-size: 12.5px; color: var(--secondary); margin-top: 4px; }
+.lv-embers { text-align: right; flex: none; }
+.lv-embers b { display: block; font-size: 18px; color: var(--flame-text); font-variant-numeric: tabular-nums; }
+.lv-embers span { font-size: 11.5px; color: var(--secondary); }
+.fl-card-level .fl-bar { margin-top: 16px; height: 10px; border-radius: 5px; }
+.lv-next { font-size: 13.5px; color: var(--bone); }
+.lv-next b { font-variant-numeric: tabular-nums; }
+.lv-reward { font-size: 12.5px; color: var(--secondary); margin-top: 4px; }
+.lv-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12.5px; color: var(--secondary); }
+.lv-facts span + span::before { content: '·'; margin-right: 14px; }
+.fl-card-level .fl-progress-link { align-self: flex-start; }
+
+.lv-ladder { display: flex; flex-direction: column; }
+.lv-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.lv-row + .lv-row { border-top: 1px solid var(--ink4); }
+.lv-n { width: 34px; height: 34px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; color: var(--secondary); box-shadow: inset 0 0 0 1.5px var(--ink4); font-variant-numeric: tabular-nums; }
+.lv-row.done .lv-n { color: var(--bone); background: var(--ink3); box-shadow: none; }
+.lv-row.now .lv-n { color: var(--on-flame); background: var(--flame); box-shadow: none; }
+.lv-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lv-row-at { font-size: 13px; color: var(--secondary); }
+.lv-row-reward { font-size: 13px; font-weight: 700; color: var(--bone); }
+.lv-row.next { opacity: .75; }
+.lv-here { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--flame-text); padding-right: 4px; }

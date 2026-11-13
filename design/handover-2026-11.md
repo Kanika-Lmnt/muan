@@ -439,3 +439,19 @@ user_reactions) and eight badge rows. Safe to run twice.
   spots) replaces Phai, dressed only in items earned from real check-ins.
   First layered build is a claude.ai artifact ("Tokay Dress-up"); not in
   the app yet.
+
+## 22. Levels, and a simpler You (13 Nov)
+
+- **Levels** (levelInfo(), worked out from embers_total; nothing new stored,
+  no migration). Each level costs 25 more than the last: L2 50, L5 350,
+  L10 1,350, L15 2,975, L20 5,225 embers; cap 50. Shown as the main card
+  on You (Level, bar, embers to next, the next real reward) and as a
+  ladder at the top of Progress, with Phai's stages marked on the level
+  they arrive at. Level rewards for the new pet are planned, not built:
+  only rewards that exist are ever named.
+- **You is shorter**: a small profile header (photo or avatar, @handle,
+  places and check-ins), the level card, this month's challenge, the
+  monthly recap (when there is one), Your Vientiane, Saved, then venue
+  links and sign out. Badges, avatar items, Next up and Your rankings moved
+  to Progress. The old flame card and identity card functions are unused
+  now but kept.

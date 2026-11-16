@@ -4,7 +4,7 @@
     "/",
     "/api/*",
     "/CLAUDE.md", "/PHASE2.md", "/README.md", "/schema.sql",
-    "/design/*", "/marketing/*", "/migrations/*", "/scripts/*", "/functions/*",
+    "/app/*", "/design/*", "/marketing/*", "/migrations/*", "/scripts/*", "/functions/*",
     "/.claude/*", "/.wrangler/*", "/.git/*"
   ],
   "exclude": []

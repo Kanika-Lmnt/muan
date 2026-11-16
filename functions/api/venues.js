@@ -68,6 +68,17 @@ async function handleGet(context) {
     // client's "You're here" button uses the server's own number
     const checkinRadiusM = await readCheckinRadius(db);
 
+    // how many DIFFERENT people checked in at each venue in the last 30
+    // days — the honest "how many people go here" number behind the Top
+    // lists (js/app.js topListFor()). People, not check-ins, so one regular
+    // can't carry a venue up the list. Omitted for venues with none.
+    const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const visitRows = await db.prepare(
+      `SELECT venue_id, COUNT(DISTINCT user_id) AS people
+       FROM checkins WHERE created_at > ? GROUP BY venue_id`
+    ).bind(since30).all();
+    const people30 = new Map(visitRows.results.map((r) => [r.venue_id, r.people]));
+
     const venues = rows.results.map((r) => {
       const v = {
         id: r.id,
@@ -120,6 +131,11 @@ async function handleGet(context) {
       if (r.logo !== null) v.logo = r.logo;
       // date only: when the listing was last changed (venue page shows it)
       if (r.updated_at) v.updated = String(r.updated_at).slice(0, 10);
+      // only from 3 people up: "1 person this month" at a quiet place could
+      // tell someone who went (privacy policy: counts, never names). The app
+      // never shows fewer than 3 anyway (TOP_MIN_PEOPLE in js/app.js); this
+      // keeps the raw API from saying it either.
+      if ((people30.get(r.id) || 0) >= 3) v.people_30d = people30.get(r.id);
       return v;
     });
 

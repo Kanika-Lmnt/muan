@@ -1,0 +1,440 @@
+<title>Tokay Dress-up</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+Lao:wght@400;700&display=swap">
+<style>
+  /* Layout: one stage (the gecko, live) beside a control column; stacks on phones.
+     Colours follow Paisaidee's own tokens (ink, bone, flame); the gecko keeps its own art colours in both themes. */
+  :root {
+    --bg: #FFFCF5; --surface: #FFFFFF; --line: #E9E0CD; --fg: #2A2419; --muted: #7D7466;
+    --accent: #E8462A; --accent-wash: #FFE7DE; --stage: #F4EEDF;
+    --display: 'Space Grotesk', system-ui, sans-serif; --lao: 'Noto Sans Lao', 'Space Grotesk', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #141215; --surface: #1C191E; --line: #2E2A31; --fg: #F5F1E8; --muted: #9A93A3;
+    --accent: #FF5A3C; --accent-wash: #3A1F1A; --stage: #211D24; color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #141215; --surface: #1C191E; --line: #2E2A31; --fg: #F5F1E8; --muted: #9A93A3;
+    --accent: #FF5A3C; --accent-wash: #3A1F1A; --stage: #211D24; color-scheme: dark; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--display); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-block: 28px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1 { font-size: 28px; margin: 0; text-wrap: balance; }
+  .lede { color: var(--muted); margin: 6px 0 0; max-width: 62ch; line-height: 1.5; font-size: 15px; }
+  .main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; margin-top: 22px; }
+  @media (max-width: 760px) { .main { grid-template-columns: 1fr; } }
+  .stage { background: var(--stage); border-radius: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px; min-height: 380px; }
+  .stage svg { width: min(100%, 380px); height: auto; }
+  .style-tag { margin-top: 4px; font-size: 13px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--accent); }
+  .controls { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .group h2 { font-size: 13px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: 600 14px var(--display); color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip:focus-visible, .preset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lao { font-family: var(--lao); }
+  .presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
+  @media (max-width: 560px) { .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .preset { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 8px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: var(--display); color: var(--fg); }
+  .preset[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .preset svg { width: 100%; max-width: 150px; height: auto; }
+  .preset b { font-size: 14px; } .preset small { font-size: 12px; color: var(--muted); }
+  .note { margin-top: 26px; padding: 14px 16px; border-radius: 14px; background: var(--accent-wash); font-size: 14px; line-height: 1.55; }
+  .note ol { margin: 6px 0 0; padding-left: 20px; }
+  #bob { animation: bob 2.6s ease-in-out infinite; transform-origin: 120px 250px; }
+  #tail { animation: sway 3.2s ease-in-out infinite; transform-origin: 152px 206px; }
+  @keyframes bob { 0%,100% { transform: translateY(0) scaleY(1); } 50% { transform: translateY(-4px) scaleY(1.015); } }
+  @keyframes sway { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
+  .zzz { animation: zzz 2.4s ease-in-out infinite; }
+  @keyframes zzz { 0% { opacity: 0; transform: translate(0, 4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -10px); } }
+  @media (prefers-reduced-motion: reduce) { #bob, #tail, .zzz { animation: none; } }
+
+  /* v2: level bar, go-out simulator, collection book, reveal */
+  .lvl { width: min(100%, 340px); margin-top: 10px; }
+  .lvl-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  .lvl-row b { color: var(--fg); }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
+  .chip[disabled] { opacity: .55; cursor: not-allowed; border-style: dashed; }
+  .chip[data-v=""][aria-pressed="true"] { background: var(--surface); color: var(--fg); border-color: var(--accent); }
+  .chip .need { font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .go { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .go button { font: 600 13.5px var(--display); color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 12px; text-align: left; cursor: pointer; }
+  .go button:active { transform: scale(.98); }
+  .go .wide { grid-column: span 2; text-align: center; background: var(--accent-wash); border-color: transparent; }
+  .tally { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  section.book { margin-top: 28px; }
+  section h2.sec { font-size: 20px; margin: 0 0 4px; }
+  section .sec-sub { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 8px 12px;
+    display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; min-width: 0; }
+  .tile svg { width: 72px; height: 60px; }
+  .tile b { font-size: 13.5px; } .tile small { font-size: 12px; color: var(--muted); }
+  .tile.locked svg { filter: brightness(0); opacity: .14; }
+  [data-theme="dark"] .tile.locked svg { filter: brightness(0) invert(1); opacity: .16; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tile.locked svg { filter: brightness(0) invert(1); opacity: .16; } }
+  .tile.rare { box-shadow: inset 0 0 0 1.5px #FFC24B; }
+  .tile .tier { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: #C98A00; }
+  .stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 560px) { .stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stages .tile svg { width: 100%; max-width: 130px; height: auto; }
+  .stages .tile.now { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .reveal { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 18, 21, .55); padding: 20px max(16px, env(safe-area-inset-left, 0px)); }
+  .reveal-card { background: var(--surface); color: var(--fg); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px);
+    text-align: center; animation: rv-in .35s cubic-bezier(.2,1.4,.4,1) both; }
+  .reveal-card .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent); }
+  .reveal-card .art { position: relative; height: 150px; display: flex; align-items: center; justify-content: center; }
+  .reveal-card .art svg { width: 150px; height: 150px; animation: rv-pop .6s .15s cubic-bezier(.2,1.6,.4,1) both; }
+  .reveal-card .glow { position: absolute; width: 150px; height: 150px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,194,75,.5), rgba(255,194,75,0) 70%); animation: rv-glow 1.6s ease-in-out infinite; }
+  .reveal-card h3 { margin: 4px 0 2px; font-size: 22px; } .reveal-card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .reveal-card .btns { display: flex; gap: 8px; margin-top: 16px; }
+  .reveal-card .btns button { flex: 1; font: 700 15px var(--display); border-radius: 14px; padding: 12px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+  .reveal-card .btns .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @keyframes rv-in { from { opacity: 0; transform: scale(.9); } }
+  @keyframes rv-pop { from { opacity: 0; transform: scale(.3) rotate(-12deg); } }
+  @keyframes rv-glow { 50% { transform: scale(1.12); opacity: .7; } }
+  @media (prefers-reduced-motion: reduce) { .reveal-card, .reveal-card .art svg, .reveal-card .glow { animation: none; } }
+</style>
+
+<div class="wrap">
+  <h1>Tokay Dress-up</h1>
+  <p class="lede">The Paisaidee pet, second pass: a chill tokay gecko that grows with your level and only wears what you've earned by going out. Press the buttons to go out, watch items unlock, then dress it from your wardrobe.</p>
+
+  <div class="main">
+    <div class="stage">
+      <div id="big"></div>
+      <div class="style-tag" id="styleTag">Just hatched</div>
+      <div class="lvl"><div class="lvl-row"><span>Level <b id="lvlN">1</b> · <span id="stageName">Hatchling</span></span><span id="lvlNext"></span></div><div class="bar"><i id="lvlBar"></i></div></div>
+    </div>
+    <div class="controls">
+      <div class="group"><h2>Go out (demo)</h2>
+        <div class="go" id="go">
+          <button data-go="cafe">Check in at a café</button>
+          <button data-go="cafe,early">A café before 9 am</button>
+          <button data-go="bar">Check in at a bar</button>
+          <button data-go="bar,late">A bar after 11 pm</button>
+          <button data-go="bar,sunset">Riverside at sunset</button>
+          <button data-go="event">Go to an event</button>
+          <button data-go="province">A place in a new province</button>
+          <button data-go="month" class="">A busy month (10 check-ins)</button>
+          <button data-go="reset" class="wide">Start over</button>
+        </div>
+        <div class="tally" id="tally"></div>
+      </div>
+      <div class="group"><h2>Wardrobe</h2><div id="wardrobe"></div></div>
+      <div class="group"><h2>Mood</h2><div class="row" data-slot="mood">
+        <button class="chip" data-v="chill">Chill</button><button class="chip" data-v="happy">Happy</button><button class="chip" data-v="sleepy">Sleepy</button><button class="chip" data-v="proud">Proud</button></div></div>
+    </div>
+  </div>
+
+  <section class="book">
+    <h2 class="sec">Growing up</h2>
+    <p class="sec-sub">The gecko grows with your level. It never shrinks, gets sick or goes hungry.</p>
+    <div class="stages" id="stages"></div>
+  </section>
+
+  <section class="book">
+    <h2 class="sec">Collection book</h2>
+    <p class="sec-sub" id="bookSub">Everything your gecko can earn. Grey ones are still to find.</p>
+    <div class="grid" id="book"></div>
+  </section>
+
+  <section class="book">
+    <h2 class="sec">Other people's geckos</h2>
+    <p class="sec-sub">Same pet, different nights out.</p>
+  <div class="presets" id="presets"></div>
+  </section>
+
+  <div class="note">
+    <b>How this becomes the app's pet.</b> Each part is its own layer: tail, legs, body, arms, head, eyelids, mouth, then item slots for hand, head, face, neck and bag. In the app:
+    <ol>
+      <li>Items come only from real check-ins, using what Paisaidee already records: the type of place, the time, riverside, province.</li>
+      <li>Some items level up: the coffee goes paper cup → ceramic mug → latte-art cup, so going back to cafés keeps paying off.</li>
+      <li>The gecko grows at levels 5, 10 and 20. Level comes from embers, the same as the level bar on the You page.</li>
+      <li>You choose what to wear from what you've earned. Nothing can be bought.</li>
+    </ol>
+    The buttons above are a simulator: each one counts as a check-in at a new place (+25 embers).
+  </div>
+</div>
+
+<script>
+const O = '#3F4470', BODY = '#8D9AC6', BODY_D = '#7684B3', BELLY = '#F4E2CB', SPOT = '#FF6E3A', EYE = '#F6B53B', PUP = '#2A2440';
+const PRESETS = [
+  { name: 'Just hatched', sub: 'Level 1 · new', stage: 'hatchling', s: { hand: '', head: '', face: '', neck: '', bag: '', mood: 'chill' } },
+  { name: 'Café hopper', sub: 'Level 12 · 26 cafés', stage: 'grown', s: { hand: 'latte', head: 'sunhat', face: '', neck: '', bag: '', mood: 'happy' } },
+  { name: 'Night owl', sub: 'Level 8 · bars, late', stage: 'young', s: { hand: 'cocktail', head: '', face: 'shades', neck: 'scarf', bag: '', mood: 'chill' } },
+  { name: 'Explorer', sub: 'Level 21 · 3 provinces', stage: 'legend', s: { hand: 'mug', head: 'cap', face: '', neck: '', bag: '3', mood: 'proud' } },
+];
+let state = { hand: 'cup', head: '', face: '', neck: '', bag: '', mood: 'chill' };
+let uid = 0;
+let SPOT_C = SPOT, STAGE = 'hatchling';
+
+const spot = (x, y, r) => `<ellipse cx="${x}" cy="${y}" rx="${r}" ry="${r * .82}" fill="${SPOT_C}"/>`;
+function limb(d, w = 15) {
+  return `<path d="${d}" fill="none" stroke="${O}" stroke-width="${w + 7}" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${BODY}" stroke-width="${w}" stroke-linecap="round"/>`;
+}
+const pads = (pts) => pts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="5.2" fill="${BODY}" stroke="${O}" stroke-width="3"/>`).join('');
+
+/* ---- item layers ---- */
+const ITEMS = {
+  cup: (x, y) => `<g transform="translate(${x},${y})">
+    <path d="M-5,-44 q-6,-7 0,-13 q6,-6 0,-13 M7,-42 q-6,-7 0,-13 q6,-6 0,-12" fill="none" stroke="#BDB3A3" stroke-width="3" stroke-linecap="round"/>
+    <path d="M-12,-27 L12,-27 L9,9 L-9,9 Z" fill="#FFFDF8" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M-11,-14 L11,-14 L10,-2 L-10,-2 Z" fill="${SPOT}"/>
+    <rect x="-15" y="-33" width="30" height="8" rx="4" fill="#6B4A3A" stroke="${O}" stroke-width="3.5"/></g>`,
+  cocktail: (x, y) => `<g transform="translate(${x},${y})">
+    <circle cx="13" cy="-37" r="7" fill="#9BCB4F" stroke="${O}" stroke-width="3"/>
+    <path d="M-19,-35 L19,-35 L0,-12 Z" fill="#FF7FA8" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M0,-12 L0,7" stroke="${O}" stroke-width="3.5"/><ellipse cx="0" cy="8" rx="10" ry="3.5" fill="#FFFDF8" stroke="${O}" stroke-width="3"/></g>`,
+  mug: (x, y) => `<g transform="translate(${x},${y})">
+    <path d="M-5,-42 q-6,-7 0,-13 q6,-6 0,-13 M7,-40 q-6,-7 0,-13 q6,-6 0,-12" fill="none" stroke="#BDB3A3" stroke-width="3" stroke-linecap="round"/>
+    <path d="M12,-20 q14,0 14,11 q0,11 -14,11" fill="none" stroke="${O}" stroke-width="7"/><path d="M12,-20 q14,0 14,11 q0,11 -14,11" fill="none" stroke="#FF6E3A" stroke-width="3"/>
+    <rect x="-14" y="-28" width="28" height="36" rx="6" fill="#FF6E3A" stroke="${O}" stroke-width="3.5"/>
+    <path d="M-14,-14 h28" stroke="#FFFDF8" stroke-width="5"/></g>`,
+  latte: (x, y) => `<g transform="translate(${x},${y})">
+    <path d="M18,-46 l2,-6 l2,6 l6,2 l-6,2 l-2,6 l-2,-6 l-6,-2 z M-22,-40 l1.5,-4 l1.5,4 l4,1.5 l-4,1.5 l-1.5,4 l-1.5,-4 l-4,-1.5 z" fill="#FFC24B" stroke="${O}" stroke-width="1.5"/>
+    <ellipse cx="0" cy="8" rx="24" ry="5" fill="#FFFDF8" stroke="${O}" stroke-width="3"/>
+    <path d="M-19,-20 L19,-20 Q18,6 0,6 Q-18,6 -19,-20 Z" fill="#FFFDF8" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="-20" rx="19" ry="5" fill="#C8955F" stroke="${O}" stroke-width="3"/>
+    <path d="M0,-17 c-6,-4 -5,-8 -2,-8 c1.2,0 2,1 2,2 c0,-1 .8,-2 2,-2 c3,0 4,4 -2,8 z" fill="#FFFDF8"/></g>`,
+  ticket: (x, y) => `<g transform="translate(${x},${y}) rotate(-14)">
+    <path d="M-20,-34 h40 v9 a5,5 0 0 0 0,10 v9 h-40 v-9 a5,5 0 0 0 0,-10 z" fill="#8A6CE8" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M-8,-30 v24" stroke="#FFFDF8" stroke-width="2.5" stroke-dasharray="3 3"/><circle cx="6" cy="-20" r="5" fill="#FFC24B"/></g>`,
+  cap: () => `<g transform="translate(120,72)">
+    <path d="M-40,2 C-40,-36 40,-36 40,2 Z" fill="#D8C38D" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="-39" y="-11" width="78" height="9" fill="#6B4A3A"/><circle cx="20" cy="-7" r="5" fill="${SPOT}" stroke="${O}" stroke-width="2.5"/>
+    <ellipse cx="0" cy="3" rx="60" ry="10" fill="#C9B27C" stroke="${O}" stroke-width="3.5"/></g>`,
+  sunhat: () => `<g transform="translate(120,72)">
+    <path d="M-34,4 C-34,-30 34,-30 34,4 Z" fill="#FFC24B" stroke="${O}" stroke-width="3.5"/>
+    <path d="M10,2 C30,2 58,4 64,10 C50,14 24,10 8,8 Z" fill="#F2A93B" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <circle cx="-6" cy="-14" r="6" fill="#FFF3C9" stroke="${O}" stroke-width="2.5"/></g>`,
+  shades: (eyes) => eyes.map(([x, y]) => `<ellipse cx="${x}" cy="${y}" rx="21" ry="15" fill="#241F33" stroke="${O}" stroke-width="3.5"/>
+      <path d="M${x - 12},${y - 4} q6,-7 14,-7" stroke="#6E6A8C" stroke-width="3" fill="none" stroke-linecap="round"/>`).join('')
+    + `<path d="M${eyes[0][0] + 20},${eyes[0][1] - 3} Q120,${eyes[0][1] - 10} ${eyes[1][0] - 20},${eyes[1][1] - 3}" fill="none" stroke="${O}" stroke-width="3.5"/>`,
+  scarf: () => `<g>
+    <path d="M86,148 Q120,170 154,148 L156,160 Q120,184 84,160 Z" fill="#FF8A3C" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M90,156 Q120,174 150,156" fill="none" stroke="#FF5A8A" stroke-width="4"/>
+    <path d="M138,166 L150,196 L139,199 L129,170 Z" fill="#FF8A3C" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M141,186 l3,9 M136,188 l3,9" stroke="${O}" stroke-width="2"/></g>`,
+  bag: (n) => {
+    const patches = [`<circle cx="-11" cy="9" r="5.5" fill="${SPOT}" stroke="${O}" stroke-width="2"/>`,
+      `<rect x="-3" y="4" width="10" height="10" rx="2" fill="#FFC24B" stroke="${O}" stroke-width="2"/>`,
+      `<path d="M12,14 l5.5,-10 l5.5,10 z" fill="#8A6CE8" stroke="${O}" stroke-width="2" stroke-linejoin="round"/>`];
+    return `<path d="M146,154 L108,196" stroke="#6B4A3A" stroke-width="6" stroke-linecap="round"/>
+      <g transform="translate(98,206)"><rect x="-23" y="-14" width="46" height="34" rx="9" fill="#7E9A5C" stroke="${O}" stroke-width="3.5"/>
+      <path d="M-23,-4 Q0,8 23,-4" fill="none" stroke="${O}" stroke-width="3"/>${patches.slice(0, +n).join('')}</g>`;
+  },
+};
+
+/* ---- face: eyelids carry the mood; JS lowers them for a blink ---- */
+const EYES = [[84, 108], [156, 108]];
+const MOODS = { chill: { lid: .44, mouth: 'smirk' }, happy: { lid: 1, mouth: 'open', arcs: true }, sleepy: { lid: .74, mouth: 'small', zzz: true }, proud: { lid: .26, mouth: 'grin', spark: true } };
+function eyesSvg(id, lid, arcs) {
+  if (arcs) return EYES.map(([x, y]) => `<path d="M${x - 15},${y + 4} Q${x},${y - 14} ${x + 15},${y + 4}" fill="none" stroke="${O}" stroke-width="4.5" stroke-linecap="round"/>`).join('');
+  return EYES.map(([x, y], i) => {
+    const top = y - 17, h = 34, ly = top + lid * h;
+    return `<defs><clipPath id="e${id}${i}"><ellipse cx="${x}" cy="${y}" rx="19" ry="17"/></clipPath></defs>
+      <ellipse cx="${x}" cy="${y}" rx="19" ry="17" fill="${EYE}"/>
+      <g clip-path="url(#e${id}${i})">
+        <ellipse cx="${x + (i ? -3 : 3)}" cy="${y + 2}" rx="6.5" ry="10" fill="${PUP}"/><circle cx="${x + (i ? -6 : 0)}" cy="${y - 4}" r="3.2" fill="#fff"/>
+        <rect class="lid" data-base="${lid}" data-top="${top}" x="${x - 22}" y="${top - 2}" width="44" height="${ly - top + 2}" fill="${BODY_D}"/>
+        <path class="lidline" d="M${x - 22},${ly} Q${x},${ly + 3} ${x + 22},${ly}" stroke="${O}" stroke-width="3.5" fill="none"/>
+      </g><ellipse cx="${x}" cy="${y}" rx="19" ry="17" fill="none" stroke="${O}" stroke-width="3.5"/>`;
+  }).join('');
+}
+const MOUTHS = {
+  smirk: `<path d="M100,134 Q120,141 142,130" fill="none" stroke="${O}" stroke-width="3.5" stroke-linecap="round"/><path d="M132,135 L135.5,142 L138.5,133" fill="#fff" stroke="${O}" stroke-width="2" stroke-linejoin="round"/>`,
+  open: `<path d="M102,131 Q120,152 138,131 Z" fill="#7A2E3A" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/><ellipse cx="120" cy="141" rx="7" ry="4" fill="#FF8FA3"/>`,
+  small: `<path d="M112,135 Q120,139 128,135" fill="none" stroke="${O}" stroke-width="3.5" stroke-linecap="round"/>`,
+  grin: `<path d="M98,130 Q120,147 144,129" fill="none" stroke="${O}" stroke-width="3.5" stroke-linecap="round"/><path d="M131,136 L134.5,143 L138,135" fill="#fff" stroke="${O}" stroke-width="2" stroke-linejoin="round"/>`,
+};
+
+const STAGES = [
+  { id: 'hatchling', name: 'Hatchling', from: 1, scale: .8 },
+  { id: 'young', name: 'Young', from: 5, scale: .9 },
+  { id: 'grown', name: 'Grown', from: 10, scale: 1 },
+  { id: 'legend', name: 'Legend', from: 20, scale: 1 },
+];
+const stageFor = lvl => [...STAGES].reverse().find(st => lvl >= st.from);
+function gecko(s, live, stageId) {
+  const st = STAGES.find(x => x.id === (stageId || STAGE)) || STAGES[0];
+  SPOT_C = st.id === 'legend' ? '#FFC24B' : SPOT;
+  const id = ++uid, m = MOODS[s.mood] || MOODS.chill, H = [56, 178];
+  const hand = s.hand && ITEMS[s.hand] ? ITEMS[s.hand](H[0], H[1] - 2) : '';
+  const shell = st.id === 'hatchling' ? `<path d="M82,240 L90,228 L98,239 L106,227 L114,239 L122,227 L130,239 L138,227 L146,239 L154,228 L159,242 Q156,258 120,259 Q84,258 81,242 Z" fill="#FFF6E6" stroke="${O}" stroke-width="3.5" stroke-linejoin="round"/><circle cx="104" cy="248" r="3" fill="#F1DFC0"/><circle cx="138" cy="250" r="2.5" fill="#F1DFC0"/>` : '';
+  const aura = st.id === 'legend' ? `<defs><radialGradient id="au${id}"><stop offset="0" stop-color="#FFC24B" stop-opacity=".45"/><stop offset="1" stop-color="#FFC24B" stop-opacity="0"/></radialGradient></defs><circle cx="120" cy="140" r="118" fill="url(#au${id})"/>` : '';
+  return `<svg viewBox="0 0 240 262" role="img" aria-label="Tokay gecko pet, ${st.name}, ${s.mood}">
+  ${aura}<ellipse cx="120" cy="252" rx="62" ry="7" fill="${O}" opacity=".12"/>
+  <g transform="translate(120,252) scale(${st.scale}) translate(-120,-252)">
+  <g ${live ? 'id="bob"' : ''}>
+    <g ${live ? 'id="tail"' : ''}>${limb('M150,214 C204,218 222,170 196,150 C182,140 168,154 180,162', 17)}${spot(206, 182, 4)}${spot(190, 208, 3.5)}${spot(197, 156, 3)}</g>
+    ${limb('M104,212 L98,236', 16)}${limb('M136,212 L142,236', 16)}${pads([[88, 240], [98, 244], [108, 240], [132, 240], [142, 244], [152, 240]])}${shell}
+    <ellipse cx="120" cy="188" rx="36" ry="38" fill="${BODY}" stroke="${O}" stroke-width="3.5"/>
+    <ellipse cx="120" cy="196" rx="22" ry="27" fill="${BELLY}"/>${spot(97, 172, 4)}${spot(146, 182, 4.5)}${spot(140, 208, 3)}
+    ${limb(`M94,166 Q70,166 ${H[0]},${H[1]}`)}${limb('M146,166 Q170,166 184,178')}
+    ${s.bag ? ITEMS.bag(s.bag) : ''}
+    ${hand}
+    ${pads([[H[0] - 9, H[1] - 1], [H[0] - 4, H[1] + 7], [H[0] + 4, H[1] + 8], [H[0] + 9, H[1] + 1]])}${pads([[178, 183], [183, 190], [191, 189], [194, 181]])}
+    <path d="M48,116 C48,78 80,64 120,64 C160,64 192,78 192,116 C192,146 160,158 120,158 C80,158 48,146 48,116 Z" fill="${BODY}" stroke="${O}" stroke-width="3.5"/>
+    <path d="M70,140 C90,154 150,154 170,140 C160,152 140,158 120,158 C100,158 80,152 70,140 Z" fill="${BELLY}" opacity=".9"/>
+    ${spot(104, 78, 6)}${spot(132, 74, 5)}${spot(150, 86, 4)}${spot(88, 86, 4)}${spot(120, 90, 3.5)}${spot(62, 118, 3.5)}${spot(178, 120, 3.5)}
+    <circle cx="113" cy="124" r="2" fill="${O}"/><circle cx="127" cy="124" r="2" fill="${O}"/>
+    ${eyesSvg(id, m.lid, m.arcs)}${MOUTHS[m.mouth]}
+    ${s.neck === 'scarf' ? ITEMS.scarf() : ''}
+    ${s.face === 'shades' ? ITEMS.shades(EYES) : ''}
+    ${s.head ? ITEMS[s.head]() : ''}
+    ${m.zzz ? `<text class="zzz" x="186" y="62" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="18" fill="${O}">z</text>` : ''}
+    ${m.spark ? `<path d="M196,70 l3,-9 l3,9 l9,3 l-9,3 l-3,9 l-3,-9 l-9,-3 z" fill="#FFC24B" stroke="${O}" stroke-width="2"/>` : ''}
+  </g></g></svg>`;
+}
+
+/* ---- earning: every item comes from a check-in rule ---- */
+const ITEM_DEFS = [
+  { id: 'cup', slot: 'hand', name: 'Paper cup', rule: '3 cafés', ok: c => c.cafe >= 3, view: '20 105 72 75' },
+  { id: 'mug', slot: 'hand', name: 'Ceramic mug', rule: '10 cafés', tier: 'Level 2', ok: c => c.cafe >= 10, view: '20 105 80 75' },
+  { id: 'latte', slot: 'hand', name: 'Latte-art cup', rule: '25 cafés', tier: 'Rare', rare: true, ok: c => c.cafe >= 25, view: '20 105 80 75' },
+  { id: 'cocktail', slot: 'hand', name: 'Cocktail', rule: '3 bars', ok: c => c.bar >= 3, view: '20 105 72 75' },
+  { id: 'ticket', slot: 'hand', name: 'Event ticket', rule: '2 events', ok: c => c.event >= 2, view: '20 105 72 75' },
+  { id: 'sunhat', slot: 'head', name: 'Morning cap', rule: '2 cafés before 9 am', ok: c => c.early >= 2, view: '52 36 140 50' },
+  { id: 'cap', slot: 'head', name: 'Explorer hat', rule: '10 different places', ok: c => c.total >= 10, view: '52 32 136 54' },
+  { id: 'shades', slot: 'face', name: 'Night shades', rule: '3 nights out after 11 pm', ok: c => c.late >= 3, view: '58 88 124 40' },
+  { id: 'scarf', slot: 'neck', name: 'Sunset scarf', rule: '2 riverside sunsets', ok: c => c.sunset >= 2, view: '76 140 88 64' },
+  { id: 'bag', slot: 'bag', name: 'Province bag', rule: '1 province outside Vientiane (a patch for each)', ok: c => c.province >= 1, view: '68 148 60 82' },
+];
+const START = { cafe: 4, bar: 1, event: 0, early: 1, late: 1, sunset: 0, province: 0, total: 5 };
+let counts = { ...START };
+let embers = counts.total * 25;
+const earned = () => new Set(ITEM_DEFS.filter(d => d.ok(counts)).map(d => d.id));
+
+// the same level curve as the app (levelInfo() in js/app.js)
+function levelInfo(e) {
+  let level = 1, floor = 0, cost = 50;
+  while (level < 50 && e >= floor + cost) { floor += cost; level++; cost += 25; }
+  return { level, into: e - floor, need: cost, next: floor + cost };
+}
+
+function itemSvg(d) {
+  const inner = d.slot === 'hand' ? ITEMS[d.id](56, 176) : d.id === 'shades' ? ITEMS.shades(EYES) : d.id === 'bag' ? ITEMS.bag(3) : ITEMS[d.id]();
+  return `<svg viewBox="${d.view}" aria-hidden="true">${inner}</svg>`;
+}
+
+function styleName() {
+  const c = counts, parts = [];
+  const top = [['cafe', 'Café hopper'], ['bar', 'Bar person'], ['event', 'Event-goer']].sort((a, b) => c[b[0]] - c[a[0]])[0];
+  if (c.total === 0) return 'Just hatched';
+  if (c.late >= 3) parts.push('Night owl'); else parts.push(top[1]);
+  if (c.province >= 2) parts.push('Explorer');
+  if (c.early >= 2 && !parts.includes('Night owl')) parts.push('Early bird');
+  return parts.join(' · ');
+}
+
+function wardrobeHtml() {
+  const have = earned();
+  const slots = [['hand', 'In hand'], ['head', 'Head'], ['face', 'Face'], ['neck', 'Neck'], ['bag', 'Bag']];
+  return slots.map(([slot, label]) => `<div class="row" data-slot="${slot}" style="margin-bottom:8px" aria-label="${label}">
+      <button class="chip" data-v="">${label}: none</button>
+      ${ITEM_DEFS.filter(d => d.slot === slot).map(d => have.has(d.id)
+        ? `<button class="chip" data-v="${slot === 'bag' ? Math.min(3, counts.province) : d.id}">${d.name}</button>`
+        : `<button class="chip" disabled title="${d.rule}">${d.name}<span class="need">· ${d.rule}</span></button>`).join('')}
+    </div>`).join('');
+}
+
+function render() {
+  const L = levelInfo(embers), st = stageFor(L.level);
+  STAGE = st.id;
+  if (state.bag) state.bag = String(Math.min(3, counts.province));
+  document.getElementById('big').innerHTML = gecko(state, true);
+  document.getElementById('styleTag').textContent = styleName();
+  document.getElementById('lvlN').textContent = L.level;
+  document.getElementById('stageName').textContent = st.name;
+  document.getElementById('lvlNext').textContent = `${L.next - embers} embers to Level ${L.level + 1}`;
+  document.getElementById('lvlBar').style.width = `${Math.round(L.into / L.need * 100)}%`;
+  document.getElementById('tally').textContent = `${counts.total} check-ins · ${counts.cafe} cafés · ${counts.bar} bars · ${counts.event} events · ${counts.province} provinces · ${embers} embers`;
+  document.getElementById('wardrobe').innerHTML = wardrobeHtml();
+  document.querySelectorAll('[data-slot]').forEach(row => row.querySelectorAll('.chip').forEach(c =>
+    c.setAttribute('aria-pressed', String((state[row.dataset.slot] || '') === c.dataset.v))));
+  const have = earned();
+  document.getElementById('book').innerHTML = ITEM_DEFS.map(d => `<div class="tile${have.has(d.id) ? '' : ' locked'}${d.rare && have.has(d.id) ? ' rare' : ''}">
+      ${itemSvg(d)}${d.tier ? `<span class="tier">${d.tier}</span>` : ''}<b>${have.has(d.id) ? d.name : '???'}</b><small>${d.rule}</small></div>`).join('');
+  document.getElementById('bookSub').textContent = `${have.size} of ${ITEM_DEFS.length} found. Grey ones are still to find, and the hint says how.`;
+  document.getElementById('stages').innerHTML = STAGES.map(s => `<div class="tile${s.id === st.id ? ' now' : ''}">
+      ${gecko({ hand: '', head: '', face: '', neck: '', bag: '', mood: s.id === 'legend' ? 'proud' : 'chill' }, false, s.id)}
+      <b>${s.name}</b><small>from Level ${s.from}${s.id === st.id ? ' · now' : ''}</small></div>`).join('');
+  STAGE = st.id;
+}
+
+// clicks in the wardrobe and mood rows
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-slot] .chip'); if (!c || c.disabled) return;
+  const slot = c.closest('[data-slot]').dataset.slot;
+  state = { ...state, [slot]: c.dataset.v }; render();
+});
+
+/* ---- going out: a check-in, then any reveals it earned ---- */
+const queue = [];
+function checkIn(tags) {
+  const beforeItems = earned(), beforeStage = stageFor(levelInfo(embers).level).id;
+  counts.total++; embers += 25;
+  tags.forEach(t => counts[t]++);
+  const newItems = ITEM_DEFS.filter(d => d.ok(counts) && !beforeItems.has(d.id));
+  const st = stageFor(levelInfo(embers).level);
+  if (st.id !== beforeStage) queue.push({ kind: 'stage', st });
+  newItems.forEach(d => queue.push({ kind: 'item', d }));
+}
+document.getElementById('go').addEventListener('click', e => {
+  const b = e.target.closest('[data-go]'); if (!b) return;
+  const g = b.dataset.go;
+  if (g === 'reset') { counts = { ...START }; embers = counts.total * 25; state = { hand: 'cup', head: '', face: '', neck: '', bag: '', mood: 'chill' }; queue.length = 0; render(); return; }
+  if (g === 'month') {
+    [['cafe'], ['cafe', 'early'], ['bar'], ['bar', 'late'], ['cafe'], ['bar', 'sunset'], ['event'], ['cafe'], ['bar', 'late'], ['cafe']].forEach(checkIn);
+  } else checkIn(g.split(','));
+  render(); showNext();
+});
+
+function showNext() {
+  if (document.querySelector('.reveal') || !queue.length) return;
+  const r = queue.shift();
+  const ov = document.createElement('div');
+  ov.className = 'reveal'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+  ov.innerHTML = r.kind === 'item'
+    ? `<div class="reveal-card"><div class="eyebrow">New for your gecko</div>
+        <div class="art"><span class="glow"></span>${itemSvg(r.d)}</div>
+        <h3>${r.d.name}</h3><p>${r.d.rare ? 'Rare · ' : ''}for ${r.d.rule}</p>
+        <div class="btns"><button data-r="later">Later</button><button class="primary" data-r="wear">Wear it</button></div></div>`
+    : `<div class="reveal-card"><div class="eyebrow">Your gecko grew up</div>
+        <div class="art"><span class="glow"></span>${gecko({ ...state, mood: 'proud' }, false, r.st.id)}</div>
+        <h3>${r.st.name}</h3><p>Level ${levelInfo(embers).level}</p>
+        <div class="btns"><button class="primary" data-r="ok">Nice</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('.primary').focus();
+  ov.addEventListener('click', e => {
+    const a = e.target.closest('[data-r]'); if (!a) return;
+    if (a.dataset.r === 'wear') { state = { ...state, [r.d.slot]: r.d.slot === 'bag' ? String(Math.min(3, counts.province)) : r.d.id, mood: 'happy' }; }
+    ov.remove(); render(); showNext();
+  });
+}
+
+document.getElementById('presets').innerHTML = PRESETS.map((p, i) =>
+  `<div class="preset">${gecko(p.s, false, p.stage)}<b>${p.name}</b><small>${p.sub}</small></div>`).join('');
+render();
+
+// blink: lower both lids to closed for ~140ms every 3–6s
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function setLids(amount) {
+  document.querySelectorAll('#big .lid').forEach(l => {
+    const top = +l.dataset.top, a = amount == null ? +l.dataset.base : amount, ly = top + a * 34;
+    l.setAttribute('height', ly - top + 2);
+    const line = l.nextElementSibling, x = +l.getAttribute('x') + 22;
+    line.setAttribute('d', `M${x - 22},${ly} Q${x},${ly + 3} ${x + 22},${ly}`);
+  });
+}
+(function blink() {
+  if (!still) { setLids(1); setTimeout(() => setLids(null), 140); }
+  setTimeout(blink, 3000 + Math.random() * 3000);
+})();
+</script>

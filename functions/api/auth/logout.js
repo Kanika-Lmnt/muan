@@ -1,4 +1,4 @@
-import { sessionCookie } from '../_auth.js';
+import { sessionCookie, sessionToken } from '../_auth.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'POST') {
@@ -6,10 +6,10 @@ export async function onRequest(context) {
   }
 
   try {
-    const cookie = context.request.headers.get('Cookie') || '';
-    const m = cookie.match(/(?:^|;\s*)psd_session=([A-Za-z0-9-]+)/);
-    if (m) {
-      await context.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(m[1]).run();
+    // the cookie on the website, the bearer token in the phone app
+    const token = sessionToken(context.request);
+    if (token) {
+      await context.env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
     }
     return Response.json({ ok: true }, { headers: { 'Set-Cookie': sessionCookie('', 0) } });
   } catch (e) {

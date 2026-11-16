@@ -219,3 +219,276 @@ which already loads async.
   place was visited 2+ times). **Share my October** makes a 1080×1920 story
   image (cream, Phai, the numbers, the site address) and opens the phone's
   share sheet; where image sharing isn't supported it shares/copies text.
+
+## 13. Phone app groundwork (branch claude/capacitor)
+
+Step 1 of the Capacitor plan. Start with app/README.md, which is also the
+learning guide.
+- The website calls the API through `apiFetch()` (js/app.js, owner.js,
+  avatar.js). On the website it's plain fetch. In the app it prefixes the
+  server address (`window.PSD_SERVER`, written by app/build-www.mjs) and
+  sends the session as `Authorization: Bearer`.
+- Server: `getSessionUser` accepts the bearer token or the cookie
+  (functions/api/_auth.js). /api/auth/google returns the token in the
+  body only to the app origins (https://localhost, capacitor://localhost).
+  Logout deletes either. functions/api/_middleware.js answers CORS for
+  those two origins and lets their writes past the cross-site check.
+  That's safe because they carry a token a browser never attaches by itself.
+- Share links (venue, wheel, recap) use `SITE_ORIGIN`, which is the real
+  site in the app.
+- In the app the You tab says sign-in is coming (Google blocks web sign-in
+  in WebViews). Native sign-in is stage 3.
+- app/ (package.json, capacitor.config.js, build-www.mjs) is 404'd on the
+  public site like design/ and scripts/. The website still has no build
+  step: app/www is a copy made only for the app.
+- Tested: the app build served as https://localhost against local
+  wrangler loads venues, /api/me with a token, and the signed-out note.
+  Preflight returns 204 with CORS headers. A POST from another origin is
+  still refused. The website regression run is unchanged.
+- No migration. Safe to merge whenever. On the website the only difference
+  is the extra CORS answer for the two app origins.
+
+## 14. Phone app stage 2 (branch claude/capacitor)
+
+- Location: if the 4-second coarse fix times out or is unavailable, ask
+  once more with GPS (10s) before saying "Can't find you". Found on the
+  Android emulator, which has no wifi/cell positioning, but real phones
+  with wifi off hit it too. A denial is still final.
+- Icon and splash sources in app/assets/ (the flame pin on #141215 for the
+  icon, on cream for the splash). `npm run icons` generates the Android
+  sizes with @capacitor/assets.
+- `nativeBars()`: dark status-bar icons on cream, light on night, via
+  Capacitor's built-in SystemBars. Otherwise Android follows the phone's
+  dark mode.
+- `initNativeBackButton()` (@capacitor/app): back closes overlays, steps
+  back through the intro, leaves detail pages, returns Map/You to Home,
+  and on Home sends the app to the background.
+- Tested with a mocked Capacitor in Playwright: each back step, the
+  minimise on Home, and the bar style following the theme toggle. On the
+  website NATIVE is null and none of it runs.
+
+## 15. Top lists, "Can't decide?", When people go
+
+- **Top lists** (Home, with a Bars/Cafés switch; and at the top of each type
+  tab): up to 5 per type. Ordered by how many DIFFERENT people checked in
+  over the last 30 days (`people_30d` on /api/venues, 3+ people to count),
+  then Kar's picks from data/picks.json `top` (empty until Kar fills it).
+  Each row says which: "8 people this month" or "our pick". No Google or
+  other borrowed numbers (017's rule).
+- **Wheel**: the Spin tile is gone from the category row (it read as a
+  prize game). Home has a "Can't decide? Let Phai pick" card that names how
+  many open places it chooses from (hidden with fewer than 2). The type
+  tabs keep their Spin button.
+- **When people go** on venue pages: check-ins by weekday over 90 days,
+  plus the busiest three-hour stretch, from the new GET /api/venue-stats.
+  It's only drawn with 10+ check-ins from 5+ different people. Below that
+  nothing shows: a thin chart would be noise, and with one or two regulars
+  it would describe a person's habits.
+- The cafés tab's "Recommended" switch is renamed "Photos". It was always
+  "cafés with 2+ photos", which isn't a recommendation.
+- TODO(lao): ອັນດັບ (Top lists), ອັນດັບ + type, ເລືອກບໍ່ຖືກບໍ?
+
+## 16. Wheel payoff, new venues, check-up pass (6 Nov)
+
+- **Wheel result**: landing on an open place pulses the slice, buzzes the
+  phone and fires confetti, then opens that venue's page with a "Phai
+  picked this one" banner (Spin again / Share). Shared wheels skip Spin
+  again; a closed winner keeps the quiet note.
+- **19 new venues** (10 bars, 9 cafés), pins and hours from each venue's
+  Google Maps listing (scripts/add-venues-2026-11.sql, then
+  place-venues-2026-11.sql). Six candidates dropped as closed or missing.
+  Closing times after midnight use the 24:00+ convention (25:00 = 1 am).
+  Berliner Garden has a midday break, which the one-range-per-day hours
+  can't hold, so it carries an hours_note instead.
+- **Months and nights now use Vientiane time** (functions/api/_time.js).
+  The monthly streak, the monthly ember tiers, "nights out" and the recap
+  all sliced UTC timestamps, so anything between midnight and 7 am local
+  landed in the wrong month or day. A night now runs until 6 am.
+- **Bar-hopping**: the "you haven't moved" rule was an hour, which blocked
+  checking in next door (Baron and Mahasan are 6 m apart). Now 30 minutes,
+  and the message says how long to wait.
+- **Next up** no longer promises "about 72 new places" when fewer are left
+  to find. It says new places and going back both count.
+- **Open late** is a swipe row on phones. With 50+ venues it had become
+  a dozen-plus cards above All places.
+
+## 17. Progress page and Top list marks (7 Nov)
+
+- **Progress page** (openProgressSheet(), from "See all your progress" on
+  the You flame card): totals, Phai's path through all five stages with
+  the current one lit and how far to the next, the monthly streak as twelve
+  month dots (with current and best run), every badge and avatar item with
+  a progress bar, the last 12 check-ins with what each paid, and how
+  embers are earned. Stage pictures use the existing Phai poses until the
+  stage art exists. /api/me adds recent, months_active, embers_month and
+  phai_thresholds for it. Back (and Android back) returns to You.
+- **Top lists, signed in**: places you've been get a "been" mark, and each
+  list says "You've been to 2 of 5".
+
+## 18. Challenges, new badges, "How was it?", Lists, map peek (7 Nov)
+
+**Needs migration 019 on production before deploy** (CLAUDE.md rule):
+`node scripts/run-migration.js migrations/019_challenges_badges_reactions.sql`
+(`wrangler d1 execute --file` fails with an auth error for this project),
+then `node scripts/check-schema.js`. It adds two tables (user_challenges,
+user_reactions) and eight badge rows. Safe to run twice.
+
+- **Monthly challenge** (functions/api/_challenges.js): one goal a month,
+  the same for everyone, picked from a fixed five-step rotation by the
+  month, so nothing needs setting up. +50 embers once, paid by the
+  check-in that completes it (the user_challenges primary key stops a
+  second payout). Shown on You (after the flame card), on Progress, and on
+  the check-in celebration when it completes. The +50 counts toward the
+  month's ember total. To add a challenge, add it to ROTATION.
+- **Eight new badges** (13 in all): Café Hunter (5 cafés), Bar Hopper (two
+  bars, one night), Sunset (riverside, 5–7 pm), Early Bird (café before
+  9 am), Ten Nights Out, and 3-, 6- and 12-month streaks. Logic is in
+  checkin.js; the riverside list now lives in functions/api/_riverside.js
+  (Kong View added). Badge art is still the line icons until real art exists.
+- **"How was it?"** (functions/api/react.js): after "Nice" on the
+  celebration, Phai asks Loved it / It was fine / Not for me, then "which
+  did you like more?" against your other places of the same type with the
+  same answer (a binary search, so at most 3–4 questions with 10 places).
+  Rank is a REAL so a place lands between two others without renumbering.
+  Only places you've checked in at. The venue page shows "You: Loved it ·
+  your #1 bar · Change", and You has a "Your rankings" card per type.
+  These are private: nothing public reads user_reactions yet. If we ever
+  show "people who loved this", that's a new decision, not a default.
+- **Lists on Home** (All tab, after Top lists): Rooftops and Live music are
+  hand-picked in data/picks.json `themes` (each with a _source note);
+  "Open till 1 am or later", "By the river" and "Settle in" are worked out
+  from hours, the riverside list and vibe tags. Each opens a list page with
+  "You've been to X of Y". Kar to review the two hand-picked lists.
+- **Places in view on the map** (phone only): a swipe row of up to 12
+  places under the map, nearest the map's centre first, following the
+  type filter. It refreshes as you pan, and hides while a route is shown.
+- TODO(lao): the reaction labels, ເຈົ້າມັກບ່ອນໃດກວ່າ?, challenge titles,
+  badge names, list names.
+
+## 19. Wordmark splash and skeleton loading (13 Nov)
+
+- **Splash** (index.html, all inline): ໄປໃສດີ over a wide-spaced
+  PAISAIDEE, letters settling in one by one, and a hairline under it with
+  a soft flame light running along it while the app loads. Replaces the
+  spinning ring. The two fonts are ~2KB subsets embedded in the page (just
+  P A I S D E and ໄປໃສດີ), so the wordmark is in the brand fonts from the
+  first frame. Change the word, regenerate the subsets with pyftsubset.
+  On the phone app, Android still shows its own splash first (the app icon
+  on cream, for a split second; Android 12+ only allows an icon there),
+  then this one. Both get updated when the new logo is final.
+- **Skeleton loading**: the You screen shows grey placeholder cards in its
+  real layout while /api/me loads (youSkeletonHtml()), instead of
+  "Loading your flame…". Every Cloudinary photo shimmers until it has
+  loaded (a document-level load/error listener adds .ld; the CSS is in the
+  "skeleton loading" block at the end of style.css). Collage tiles shimmer
+  instead of showing a spinning ring. loadingRing() stays for actions in
+  progress (finding a route, upload %), where a spinner is still the
+  right signal.
+
+## 20. New Home top, flat cards, Provinces (13 Nov)
+
+- **Home top** (homeDiscoverHeaderHtml()): the photo hero is gone. A slim
+  row with the PAISAIDEE mark (weather on the right), the question in Lao
+  (ຄືນນີ້ໄປໃສດີ? / ມື້ນີ້ໄປໃສດີ?) with English under it, then a flat search
+  bar that sticks to the top of the sheet while you scroll (a hairline
+  appears under it once it's stuck, observeSearchPin()). Content now starts
+  about halfway up the first screen instead of at the bottom. The Bars /
+  Cafés / Events tabs get the same slim header with the type as the title.
+  HOME_HERO / TYPE_HERO and their photos are unused but kept, so the photo
+  header can come back.
+- **Category row**: icons sit on the page, no tiles and no shadows, with a
+  hairline under the row (Airbnb's pattern). Four now: Bars, Cafés,
+  Events, Provinces.
+- **Flat cards in light mode**: --card-fill/--card-edge/--card-lift are
+  now a white card with a hairline and no drop shadow (dark mode was
+  already flat). This touches every card in the app on purpose.
+- **Provinces** (openProvinces()): all 18 provinces by region, Central
+  first. Vientiane Capital shows the live place count and goes back to
+  Home; the rest say ໄວໆນີ້ · soon. No province content until it's real and
+  sourced. TODO(lao): Kar to check every province name.
+- **No more raised buttons** (later on 13 Nov): the flame buttons and the
+  selected chip lost their solid darker bottom strip (the "pushable" game
+  look). They're plain flame now and shrink slightly when pressed. Light
+  mode's leftover drop shadows (--card-shadow, --card-shadow-big,
+  --plate-shadow) are hairlines too. One shadow token is left,
+  --float-shadow, for things that really float: the bottom bar, the places
+  row over the map, toasts.
+
+## 21. Featured banner (13 Nov)
+
+- **featureBannerHtml()** on Home, under the category row: one wide
+  swipeable banner with dots, moving on by itself every 6s (paused for 10s
+  after a touch, never with reduced motion, never while scrolled away).
+  The sheet's sideways tab-swipe ignores it (and the Lists rail, which it
+  wasn't ignoring before: a small bug fixed here).
+- Slides, in order: anything in picks.json `featured` (empty for now; each
+  is { "venue", "line", "line_lo", "photo"? }), then the app's own: That
+  Luang photo "52 places on one map" (opens Map), your flame, this month's
+  challenge (real progress when signed in), the wheel (only if 2+ places
+  are open), 13 badges, Top lists.
+- Wording rule: nothing is a "prize". Collect/unlock, never win. A paid
+  slot would have to say "Sponsored".
+- Phai art on the flame slide is a placeholder until the new pet exists.
+- state.me now holds the signed-in /api/me (set at boot and on You) so the
+  banner can show challenge progress and open Progress directly.
+- TODO(lao): every Lao line on the slides.
+- **On fire is now ແນະນຳ / Recommended** (13 Nov, Kar's call). Same picks,
+  same data/picks.json; only the heading changed. The banner's venue
+  slides say "Featured" so the two don't share a name.
+- **Pet direction (13 Nov):** a chill tokay gecko (blue-grey, flame-orange
+  spots) replaces Phai, dressed only in items earned from real check-ins.
+  First layered build is a claude.ai artifact ("Tokay Dress-up"); not in
+  the app yet.
+
+## 22. Levels, and a simpler You (13 Nov)
+
+- **Levels** (levelInfo(), worked out from embers_total; nothing new stored,
+  no migration). Each level costs 25 more than the last: L2 50, L5 350,
+  L10 1,350, L15 2,975, L20 5,225 embers; cap 50. Shown as the main card
+  on You (Level, bar, embers to next, the next real reward) and as a
+  ladder at the top of Progress, with Phai's stages marked on the level
+  they arrive at. Level rewards for the new pet are planned, not built:
+  only rewards that exist are ever named.
+- **You is shorter**: a small profile header (photo or avatar, @handle,
+  places and check-ins), the level card, this month's challenge, the
+  monthly recap (when there is one), Your Vientiane, Saved, then venue
+  links and sign out. Badges, avatar items, Next up and Your rankings moved
+  to Progress. The old flame card and identity card functions are unused
+  now but kept.
+
+## 23. Onboarding, privacy policy and terms (13 Nov)
+
+- **Welcome now has 5 pages (+ the mood page):** what it is · real hours ·
+  location (now says exactly when it leaves the phone) · check in and level
+  up (25 embers, levels, badges, monthly challenge, must really be there) ·
+  **new: Your data stays yours** (no account needed, check-ins and ratings
+  private, sign-in keeps only Google ID + username), with "By using
+  Paisaidee you agree to the Terms of Use and Privacy Policy".
+- **legal/privacy.html and legal/terms.html**: written from what the code
+  actually does (checked against schema, checkin.js, route.js, auth). Marked
+  DRAFT with [operator] and [contact email] to fill in, Lao summary to
+  translate, legal check recommended. Linked from welcome, under the
+  Google sign-in button, and at the bottom of You. Added to the app build
+  (app/build-www.mjs PARTS).
+- **Check-in positions are now cleared after 90 days** (checkin.js, on ~1 in
+  20 check-ins), because the policy says so. schema.sql always said "purge
+  >90d"; nothing did it until now.
+- **Still missing for the App Store:** in-app "Delete my account". Apple
+  requires it. Until then the policy says to email.
+
+## 24. Delete account, small counts, pet v2 (17 Nov)
+
+- **Delete account** (You → bottom → Delete account): one screen listing
+  what goes and what stays, then a red button. functions/api/me/delete.js
+  deletes the user's photos from Cloudinary first (Admin API, by the
+  paisaidee/users/<id>/ prefix; if that fails nothing is deleted), then
+  every row in one D1 batch: sessions, checkins, badges, challenges,
+  reactions, quest_progress, comments, friendships, venue_owners, users.
+  Venues they listed stay. Tested locally with a throwaway user.
+  The privacy policy now points to it.
+- **People counts below 3** are no longer in /api/venues at all.
+- **Pet v2** lives in design/pet/tokay-dressup.html (also the "Tokay
+  Dress-up" artifact): growth stages at levels 1/5/10/20, items earned by
+  check-in rules, levelled coffee (paper → ceramic → rare latte art), a
+  collection book with grey silhouettes, unlock and grow-up reveals, and a
+  go-out simulator. Still a prototype, not in the app.

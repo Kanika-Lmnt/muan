@@ -24,7 +24,7 @@ const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
 // anything not actually in that folder, same ownership check as venue
 // photos have
 async function uploadAvatarFile(file) {
-  const sigRes = await fetch('/api/upload-signature', {
+  const sigRes = await apiFetch('/api/upload-signature', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ target: 'avatar' }),
@@ -52,7 +52,7 @@ async function uploadAvatarFile(file) {
   });
 
   const publicId = `v${uploadResult.version}/${uploadResult.public_id}`;
-  const saveRes = await fetch('/api/me/avatar', {
+  const saveRes = await apiFetch('/api/me/avatar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ public_id: publicId }),
@@ -105,7 +105,7 @@ async function removeAvatarPhoto() {
   const err = document.getElementById('pfpErr');
   if (err) err.textContent = 'Removing…';
   try {
-    const r = await fetch('/api/me/avatar', {
+    const r = await apiFetch('/api/me/avatar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ public_id: null }),

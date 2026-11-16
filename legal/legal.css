@@ -1,0 +1,29 @@
+/* Privacy policy and terms (legal/*.html). Standalone pages: the app's
+   colours and fonts, both themes, nothing else loaded. */
+:root {
+  --bg: #FFFCF5; --surface: #FFFFFF; --line: #E9E0CD; --fg: #2A2419; --muted: #6F675A; --accent: #C93A1F; --wash: #FFF1D6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #141215; --surface: #1C191E; --line: #2E2A31; --fg: #F5F1E8; --muted: #A49DAD; --accent: #FF7A5C; --wash: #2A2318;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.65 'Space Grotesk', system-ui, sans-serif; }
+.lao { font-family: 'Noto Sans Lao', 'Space Grotesk', sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 28px max(18px, env(safe-area-inset-left, 0px)) 64px; }
+.back { display: inline-block; margin-bottom: 18px; color: var(--accent); font-weight: 700; text-decoration: none; }
+h1 { margin: 0; font-size: 30px; line-height: 1.2; }
+.sub { margin: 4px 0 0; color: var(--muted); }
+.draft { margin: 18px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--wash); font-size: 14px; }
+.summary { margin: 22px 0 8px; padding: 16px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.summary h2 { margin-top: 0; }
+h2 { font-size: 19px; margin: 32px 0 6px; }
+p, li { max-width: 65ch; }
+ul { padding-left: 20px; }
+li + li { margin-top: 6px; }
+a { color: var(--accent); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 14.5px; margin-top: 8px; }
+.tbl th, .tbl td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+.tbl th { font-size: 13px; color: var(--muted); font-weight: 600; }
+.wrap-tbl { overflow-x: auto; }
+footer { margin-top: 40px; font-size: 14px; color: var(--muted); }

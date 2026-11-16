@@ -1,14 +1,12 @@
 import { getSessionUser } from './_auth.js';
 import { computeHeat } from './_heat.js';
 import { checkinRadiusFrom } from './_checkin-config.js';
+import { vtMonth, prevMonthOf, vtMonthRange, vtNight } from './_time.js';
+import { RIVERSIDE_VENUES } from './_riverside.js';
+import { challengeFor, monthRows, challengeProgress, CHALLENGE_EMBERS } from './_challenges.js';
 
 const PHAI_STAGES = ['ember', 'flicker', 'flame', 'blaze', 'naga'];
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-/* must stay in sync with the RIVERSIDE list in js/app.js (badge progress hints) */
-const RIVERSIDE_VENUES = [
-  'chokdee-cafe', 'sinouk-khemkhong', 'night-street',
-  'vte-night-market', 'baron', 'mahasan', 'rustic-white', 'seventh-heaven'
-];
 
 /* DEAD CODE — kept commented out as a documented revert path only.
    As of the venues-table migration (migrations/005_venues.sql), lat/lng/
@@ -230,7 +228,7 @@ export async function onRequest(context) {
     // lat/lng/name/hours read live from D1 (migrations/005_venues.sql) —
     // see the dead VENUE_COORDS/VENUE_HOURS comment above for the revert path
     const venueRow = await context.env.DB.prepare(
-      'SELECT lat, lng, name, hours FROM venues WHERE id = ?'
+      'SELECT lat, lng, name, hours, type FROM venues WHERE id = ?'
     ).bind(venue_id).first();
     if (!venueRow) {
       return Response.json({ ok: false, error: 'unknown venue' }, { status: 404 });
@@ -294,18 +292,26 @@ export async function onRequest(context) {
     const lastCheckin = await context.env.DB.prepare(
       `SELECT lat, lng, created_at FROM checkins WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
     ).bind(user.id).first();
+    // Two check-ins from one spot within half an hour: stops collecting
+    // every venue in a cluster (Nam Phu, the riverside) from one chair.
+    // Was an hour, which also stopped honest bar-hopping — Baron and
+    // Mahasan are 6 m apart, and moving next door after a drink is the
+    // whole point of the app. Half an hour is a drink.
     if (lastCheckin) {
       const minutesSince = (Date.now() - new Date(lastCheckin.created_at).getTime()) / 60000;
-      if (minutesSince < 60) {
+      if (minutesSince < 30) {
         const movedM = haversineMeters(lastCheckin.lat, lastCheckin.lng, lat, lng);
         if (movedM < 200) {
-          return Response.json({ ok: false, same_spot: true, message: "you haven't moved since your last check-in" });
+          const wait = Math.max(1, Math.ceil(30 - minutesSince));
+          return Response.json({ ok: false, same_spot: true, message: `You just checked in nearby — try again in ${wait} min` });
         }
       }
     }
 
     const nowIso = new Date().toISOString();
-    const currentMonth = nowIso.slice(0, 7);
+    // months in Vientiane time, not UTC (see _time.js)
+    const currentMonth = vtMonth();
+    const [monthStart, monthEnd] = vtMonthRange(currentMonth);
 
     const priorVisits = await context.env.DB.prepare(
       `SELECT COUNT(*) as c FROM checkins WHERE user_id = ? AND venue_id = ?`
@@ -313,8 +319,8 @@ export async function onRequest(context) {
     const firstVisit = priorVisits.c === 0;
 
     const monthlyVisits = await context.env.DB.prepare(
-      `SELECT COUNT(*) AS c FROM checkins WHERE user_id = ? AND venue_id = ? AND substr(created_at,1,7) = ?`
-    ).bind(user.id, venue_id, currentMonth).first();
+      `SELECT COUNT(*) AS c FROM checkins WHERE user_id = ? AND venue_id = ? AND created_at >= ? AND created_at < ?`
+    ).bind(user.id, venue_id, monthStart, monthEnd).first();
 
     let embersEarned;
     if (firstVisit) {
@@ -362,6 +368,19 @@ export async function onRequest(context) {
       user.id, venue_id, fourHoursAgo,
       user.id, sixHoursAgo
     ).run();
+    // the privacy policy (legal/privacy.html) promises reported positions
+    // are cleared after 90 days. Done here, on roughly 1 in 20 check-ins,
+    // rather than on a schedule: no cron to set up, the table is small, and
+    // a position can only outlive 90 days by as long as the app goes
+    // without check-ins. Never allowed to fail the check-in itself.
+    if (inserted.meta?.changes && Math.random() < 0.05) {
+      try {
+        const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+        await context.env.DB.prepare(
+          'UPDATE checkins SET lat = NULL, lng = NULL WHERE lat IS NOT NULL AND created_at < ?'
+        ).bind(cutoff).run();
+      } catch (e) { /* best effort */ }
+    }
     if (!inserted.meta?.changes) {
       // lost a race with a concurrent check-in — say which rule it hit
       const again = await context.env.DB.prepare(
@@ -390,8 +409,7 @@ export async function onRequest(context) {
     // → +1; any longer gap → a fresh streak of 1. It used to be "+1 for any
     // new month", so a streak never broke — three months off and back again
     // still counted as an unbroken run.
-    const prev = new Date(Date.UTC(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)) - 2, 1));
-    const previousMonth = prev.toISOString().slice(0, 7);
+    const previousMonth = prevMonthOf(currentMonth);
     await context.env.DB.prepare(
       `UPDATE users SET embers_total = embers_total + ?,
          streak_months = CASE
@@ -401,6 +419,28 @@ export async function onRequest(context) {
          last_checkin_month = ?
        WHERE id = ?`
     ).bind(embersEarned, currentMonth, previousMonth, currentMonth, user.id).run();
+
+    // the monthly challenge (_challenges.js): +50 the first time this
+    // month's is done. The primary key on user_challenges is what makes it
+    // pay once even if two check-ins finish it at the same moment.
+    // Guarded: if migration 019 hasn't reached this database yet, a
+    // missing table must not turn a check-in that already went in into an
+    // error (the 008/010 outages were exactly that shape).
+    let challengeDone = null;
+    const challenge = challengeFor(currentMonth);
+    const thisMonth = await monthRows(context.env.DB, user.id, monthStart, monthEnd);
+    const cp = challengeProgress(challenge, thisMonth);
+    if (cp.have >= cp.need) try {
+      const won = await context.env.DB.prepare(
+        `INSERT OR IGNORE INTO user_challenges (user_id, month, challenge_id, completed_at, embers) VALUES (?, ?, ?, ?, ?)`
+      ).bind(user.id, currentMonth, challenge.id, nowIso, CHALLENGE_EMBERS).run();
+      if (won.meta?.changes > 0) {
+        await context.env.DB.prepare('UPDATE users SET embers_total = embers_total + ? WHERE id = ?')
+          .bind(CHALLENGE_EMBERS, user.id).run();
+        challengeDone = { title: challenge.title, title_lo: challenge.title_lo, embers: CHALLENGE_EMBERS };
+      }
+    } catch (e) { console.error('challenge skipped (migration 019 applied?)', e); }
+
     const totals = await context.env.DB.prepare('SELECT embers_total, streak_months FROM users WHERE id = ?')
       .bind(user.id).first();
     const embersTotal = totals.embers_total;
@@ -429,11 +469,48 @@ export async function onRequest(context) {
     ).bind(user.id, ...RIVERSIDE_VENUES).first();
     if (riversideVisits.c >= 3) badgeCandidates.push('riverside');
 
+    // the 019 badges
+    const localNow = vientianeNow();
+    const localHour = localNow.getUTCHours();
+    const cafes = await context.env.DB.prepare(
+      `SELECT COUNT(DISTINCT c.venue_id) AS c FROM checkins c JOIN venues v ON v.id = c.venue_id
+       WHERE c.user_id = ? AND v.type = 'cafe'`
+    ).bind(user.id).first();
+    if (cafes.c >= 5) badgeCandidates.push('cafe-hunter');
+    if (venueRow.type === 'bar') {
+      // another bar, a different one, on the same night out
+      const tonight = vtNight(nowIso);
+      const barsTonight = new Set(thisMonth.concat(await recentBars())
+        .filter(r => r.type === 'bar' && vtNight(r.created_at) === tonight)
+        .map(r => r.venue_id));
+      if (barsTonight.size >= 2) badgeCandidates.push('bar-hopper');
+    }
+    if (RIVERSIDE_VENUES.includes(venue_id) && localHour >= 17 && localHour < 19) badgeCandidates.push('sunset');
+    if (venueRow.type === 'cafe' && localHour >= 5 && localHour < 9) badgeCandidates.push('early-bird');
+    const allTimes = await context.env.DB.prepare('SELECT created_at FROM checkins WHERE user_id = ?').bind(user.id).all();
+    if (new Set(allTimes.results.map(r => vtNight(r.created_at))).size >= 10) badgeCandidates.push('ten-nights');
+    for (const n of [3, 6, 12]) if (streakMonths >= n) badgeCandidates.push(`streak-${n}`);
+
+    // a night that started on the last evening of last month
+    async function recentBars() {
+      const since = new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString();
+      const r = await context.env.DB.prepare(
+        `SELECT c.venue_id, c.created_at, v.type FROM checkins c JOIN venues v ON v.id = c.venue_id
+         WHERE c.user_id = ? AND c.created_at > ?`
+      ).bind(user.id, since).all();
+      return r.results;
+    }
+
     const newBadges = [];
     for (const code of badgeCandidates) {
-      const insertResult = await context.env.DB.prepare(
-        `INSERT OR IGNORE INTO user_badges (user_id, badge_code, earned_at) VALUES (?, ?, ?)`
-      ).bind(user.id, code, nowIso).run();
+      // a badge row that isn't seeded yet (migration 019 not run) fails its
+      // foreign key; skip it rather than fail the check-in
+      let insertResult;
+      try {
+        insertResult = await context.env.DB.prepare(
+          `INSERT OR IGNORE INTO user_badges (user_id, badge_code, earned_at) VALUES (?, ?, ?)`
+        ).bind(user.id, code, nowIso).run();
+      } catch (e) { console.error(`badge ${code} skipped`, e); continue; }
       if (insertResult.meta?.changes > 0) {
         const badge = await context.env.DB.prepare(
           `SELECT code AS id, name, name_lo, icon FROM badges WHERE code = ?`
@@ -462,6 +539,7 @@ export async function onRequest(context) {
       venue_checkins: priorVisits.c + 1,
       capped,
       new_badges: newBadges,
+      challenge_done: challengeDone,
       visited_venue_ids: visitedVenueIds,
     });
   } catch (e) {

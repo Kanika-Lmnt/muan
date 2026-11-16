@@ -1,4 +1,4 @@
-import { sessionCookie } from '../_auth.js';
+import { sessionCookie, isAppRequest } from '../_auth.js';
 import { pickHandle } from '../_handle.js';
 import { rateLimit } from '../_ratelimit.js';
 
@@ -57,8 +57,14 @@ export async function onRequest(context) {
 
     const handleRow = user.handle ? user : await db.prepare('SELECT handle FROM users WHERE id = ?').bind(user.id).first();
 
+    // The phone app can't use the cookie (it is a different site), so it
+    // gets the session token in the body and sends it back as a header.
+    // Only the app does: on the website the token stays in the HttpOnly
+    // cookie, out of reach of page scripts.
+    const out = { ok: true, handle: handleRow.handle };
+    if (isAppRequest(context.request)) out.token = token;
     return Response.json(
-      { ok: true, handle: handleRow.handle },
+      out,
       { headers: { 'Set-Cookie': sessionCookie(token, 60 * 60 * 24 * 30) } }
     );
   } catch (e) {

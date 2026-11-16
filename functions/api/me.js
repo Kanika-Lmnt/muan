@@ -1,6 +1,8 @@
 import { getSessionUser } from './_auth.js';
 import { computeHeat } from './_heat.js';
 import { isAdmin } from './_admin.js';
+import { vtMonth, prevMonthOf, vtMonthRange, vtNight } from './_time.js';
+import { challengeFor, monthRows as challengeRows, challengeProgress } from './_challenges.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET')
@@ -10,10 +12,43 @@ export async function onRequest(context) {
     const user = await getSessionUser(context);
     if (!user) return Response.json({ ok:true, signed_out:true });
 
-    const month = new Date().toISOString().slice(0,7); // YYYY-MM
-    const days = await db.prepare(
-      "SELECT DISTINCT substr(created_at,1,10) AS d FROM checkins WHERE user_id=? AND substr(created_at,1,7)=?"
-    ).bind(user.id, month).all();
+    // months and nights in Vientiane time, not UTC (see _time.js)
+    const month = vtMonth(); // YYYY-MM
+    const [monthStart, monthEnd] = vtMonthRange(month);
+    const monthRows = await db.prepare(
+      'SELECT created_at FROM checkins WHERE user_id=? AND created_at >= ? AND created_at < ?'
+    ).bind(user.id, monthStart, monthEnd).all();
+    const nightsThisMonth = [...new Set(monthRows.results.map(r => vtNight(r.created_at)))];
+
+    // for the progress page (openProgressSheet() in js/app.js): the latest
+    // check-ins with what each paid, every month there was a check-in in
+    // (the streak calendar), and this month's embers
+    const recentRows = await db.prepare(
+      'SELECT venue_id, created_at, embers FROM checkins WHERE user_id=? ORDER BY created_at DESC LIMIT 12'
+    ).bind(user.id).all();
+    const allTimes = await db.prepare(
+      'SELECT created_at, embers FROM checkins WHERE user_id=?'
+    ).bind(user.id).all();
+    const nightsTotal = new Set(allTimes.results.map(r => vtNight(r.created_at))).size;
+    const monthsActive = [...new Set(allTimes.results.map(r => vtMonth(new Date(r.created_at))))].sort();
+    let embersMonth = allTimes.results
+      .filter(r => r.created_at >= monthStart && r.created_at < monthEnd)
+      .reduce((n, r) => n + (r.embers || 0), 0);
+
+    // this month's challenge, and "How was it?" answers. Guarded so /api/me
+    // still answers if migration 019 hasn't been applied yet.
+    let challenge = null, reactions = {};
+    try {
+      const ch = challengeFor(month);
+      const rowsM = await challengeRows(db, user.id, monthStart, monthEnd);
+      const done = await db.prepare('SELECT embers FROM user_challenges WHERE user_id=? AND month=?')
+        .bind(user.id, month).first();
+      challenge = { ...challengeProgress(ch, rowsM), done: !!done, ends: monthEnd };
+      if (done) embersMonth += done.embers;
+      const rx = await db.prepare('SELECT venue_id, reaction, rank FROM user_reactions WHERE user_id=?')
+        .bind(user.id).all();
+      reactions = Object.fromEntries(rx.results.map(r => [r.venue_id, { reaction: r.reaction, rank: r.rank }]));
+    } catch (e) { console.error('challenge/reactions skipped (migration 019 applied?)', e); }
     const venues = await db.prepare(
       'SELECT COUNT(DISTINCT venue_id) AS c FROM checkins WHERE user_id=?'
     ).bind(user.id).first();
@@ -56,8 +91,7 @@ export async function onRequest(context) {
     // the streak as it stands TODAY. users.streak_months is only written on a
     // check-in, so after a gap it still holds the old run; a streak whose
     // last month is neither this month nor last month has lapsed.
-    const prevD = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1));
-    const prevMonth = prevD.toISOString().slice(0, 7);
+    const prevMonth = prevMonthOf(month);
     const lastMonth = user.last_checkin_month || null;
     const streakState = lastMonth === month ? 'safe'
       : lastMonth === prevMonth ? 'at_risk'
@@ -66,21 +100,22 @@ export async function onRequest(context) {
 
     // recap of LAST month, from its check-ins: nights out (distinct days),
     // check-ins, places visited for the first time ever, most-visited place
+    const [prevStart, prevEnd] = vtMonthRange(prevMonth);
     const prevRows = await db.prepare(
-      "SELECT venue_id, created_at FROM checkins WHERE user_id=? AND substr(created_at,1,7)=? ORDER BY created_at"
-    ).bind(user.id, prevMonth).all();
+      'SELECT venue_id, created_at FROM checkins WHERE user_id=? AND created_at >= ? AND created_at < ? ORDER BY created_at'
+    ).bind(user.id, prevStart, prevEnd).all();
     let recap = null;
     if (prevRows.results.length) {
       const firsts = await db.prepare(
         'SELECT venue_id, MIN(created_at) AS first FROM checkins WHERE user_id=? GROUP BY venue_id'
       ).bind(user.id).all();
-      const firstMonth = Object.fromEntries(firsts.results.map(r => [r.venue_id, String(r.first).slice(0, 7)]));
+      const firstMonth = Object.fromEntries(firsts.results.map(r => [r.venue_id, vtMonth(new Date(r.first))]));
       const per = {};
       prevRows.results.forEach(r => { per[r.venue_id] = (per[r.venue_id] || 0) + 1; });
       const top = Object.entries(per).sort((a, b) => b[1] - a[1])[0];
       recap = {
         month: prevMonth,
-        nights: new Set(prevRows.results.map(r => String(r.created_at).slice(0, 10))).size,
+        nights: new Set(prevRows.results.map(r => vtNight(r.created_at))).size,
         checkins: prevRows.results.length,
         places: Object.keys(per).length,
         new_places: Object.keys(per).filter(id => firstMonth[id] === prevMonth).length,
@@ -112,7 +147,15 @@ export async function onRequest(context) {
       phai_stage: stage,
       heat,
       heat_level,
-      checkin_days: days.results.map(r => r.d),
+      // the nights out this month (a night past midnight counts once)
+      checkin_days: nightsThisMonth,
+      recent: recentRows.results,
+      months_active: monthsActive,
+      nights_total: nightsTotal,
+      embers_month: embersMonth,
+      challenge,
+      reactions,
+      phai_thresholds: thresholds,
       venue_counts: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.c])),
       // last check-in per venue (ISO) — "your places" on the You screen
       venue_last: Object.fromEntries(venueCountRows.results.map(r => [r.venue_id, r.last])),

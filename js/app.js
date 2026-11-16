@@ -83,6 +83,90 @@ const MAP_BOUNDS = { maxBounds: [[102.45, 17.85], [102.82, 18.15]], minZoom: 12.
 const HOME_VIEW = { center: [102.6090, 17.9650], zoom: 14.0 };
 const GOOGLE_CLIENT_ID = '768624583305-553qrbhib2mqbbi10ifsr18b8uqu4uvk.apps.googleusercontent.com';
 
+/* ---------- the phone app (Capacitor, see app/README.md) ----------
+   On the website the page and the API share one address, so every API
+   call is plain '/api/...'. Inside the phone app the page is loaded from
+   the app itself (https://localhost on Android, capacitor://localhost on
+   iPhone), so API calls have to name the real server — app/build-www.mjs
+   writes it into window.PSD_SERVER — and the session goes in a header as a
+   token, because the server's cookie is never sent to a different site.
+   On the website PSD_SERVER is unset and nothing here changes anything. */
+const SERVER = String(window.PSD_SERVER || '').replace(/\/+$/, '');
+const IS_APP = SERVER !== '';
+// the public address for links people share (a venue, a wheel, the recap):
+// the app's own address (https://localhost) means nothing to anyone else
+const SITE_ORIGIN = SERVER || location.origin;
+const TOKEN_KEY = 'psd-token';
+function appToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
+function setAppToken(t) {
+  try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+}
+// fetch() for the app's own /api: on the website exactly fetch(); in the
+// phone app aimed at the server, with the session token attached
+function apiFetch(path, opts = {}) {
+  if (!IS_APP) return fetch(path, opts);
+  const headers = new Headers(opts.headers || {});
+  const t = appToken();
+  if (t) headers.set('Authorization', 'Bearer ' + t);
+  return fetch(SERVER + path, { ...opts, headers });
+}
+
+/* The phone app's native features (Capacitor plugins, see app/README.md):
+   window.Capacitor is put on the page by the app itself before any script
+   runs. On the website it doesn't exist and NATIVE is null, so everything
+   below is skipped. */
+const NATIVE = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins : null;
+
+// the clock/battery icons at the top and the gesture bar at the bottom:
+// dark icons on the cream theme, light icons on the night theme. Android
+// would otherwise follow the PHONE's dark mode, not the app's theme, and
+// draw light icons on cream.
+function nativeBars(theme) {
+  const bars = NATIVE?.SystemBars;
+  if (!bars) return;
+  bars.setStyle({ style: theme === 'light' ? 'LIGHT' : 'DARK' })
+    .catch(e => console.warn('[muan] system bars', e));
+}
+
+/* Android's back button/gesture. Without this it can only go back through
+   browser history, which only the venue pages use, so from the Map or You
+   tab "back" closed the app. Now it undoes the last thing, like a native
+   app: whatever floats on top first, then a detail page, then the tab back
+   to Home, and on Home it sends the app to the background (Android's own
+   behaviour for a main screen — not closing it). */
+function initNativeBackButton() {
+  const App = NATIVE?.App;
+  if (!App) return;
+  App.addListener('backButton', () => {
+    if (lightbox) return closeLightbox();
+    if (wheelPop) return closeWheel();
+    if (vibePop) return closeVibePop();
+    // the first-run intro: back = the previous page, never a surprise skip
+    const intro = document.querySelector('[data-mi-viewport]');
+    if (intro) {
+      if (intro.scrollLeft > intro.clientWidth / 2) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+        return;
+      }
+      return App.minimizeApp();
+    }
+    const view = state.sheetView?.type;
+    if (view && !BASE_SHEET_VIEWS.includes(view)) {
+      // a venue opened by tapping pushed a history entry; popping it runs
+      // the same leaveVenue() the browser's back does
+      if (view === 'venue' && state.venuePushed) return history.back();
+      // anything else: press the page's own back/close button, so its
+      // guards (unsaved owner edits) still apply
+      const back = document.querySelector('#sheetInner [data-back]') || document.querySelector('#sheetInner [data-home]');
+      return back ? back.click() : goHome();
+    }
+    if (state.screen && state.screen !== 'home') {
+      return document.querySelector('#bottomNav [data-nav="home"]')?.click();
+    }
+    App.minimizeApp();
+  });
+}
+
 const state = {
   venues: [],
   events: [],
@@ -142,6 +226,7 @@ function setSheetView(view) {
 // of its own, so its nav handler calls this directly instead.
 function setMobileScreen(screen) {
   state.screen = screen;
+  if (screen === 'map') requestAnimationFrame(updateMapPeek);
   const app = document.getElementById('app');
   if (app) app.dataset.screen = screen;
   document.querySelectorAll('#bottomNav .nav-item').forEach(el =>
@@ -161,6 +246,7 @@ function leaveVenue(screen, viaPopstate) {
   // while a venue happens to be open — only the latter counts as a "fresh"
   // Map arrival for maybeRecenterMap()
   const isReturnToSameScreen = screen === state.screenBeforeVenue;
+  state.wheelPick = null;
   closeLightbox();  // a photo viewer left open over a venue survives every other exit path here — close it too
   stopTracking();
   state.selectedId = null; if (state.map) updateSelection();
@@ -212,6 +298,55 @@ function goToMap() {
   setSheetView({ type: 'map', venueId: null });
   if (!state.map) return;
   requestAnimationFrame(() => { state.map.resize(); maybeRecenterMap(); });
+}
+
+/* ---------- places in view (Map tab, phones) ----------
+   A short swipe row along the bottom of the map: the places inside what's
+   on screen, nearest the middle first, following the filter chips. Lists
+   are what people choose from (a map shows where, not which), so the Map
+   tab gets one too. Hidden while a route is showing — the route card
+   lives in the same spot. */
+const PEEK_MAX = 12;
+function updateMapPeek() {
+  let peek = document.getElementById('mapPeek');
+  const app = document.getElementById('app');
+  if (!isMobile() || !state.map || state.screen !== 'map' || state.routeVenueId) {
+    if (peek) peek.hidden = true;
+    app?.classList.remove('has-peek');
+    return;
+  }
+  if (!peek) {
+    peek = document.createElement('div');
+    peek.id = 'mapPeek';
+    peek.className = 'map-peek';
+    peek.addEventListener('click', e => {
+      const c = e.target.closest('[data-open-venue]');
+      if (c) openVenue(c.dataset.openVenue);
+    });
+    app.appendChild(peek);
+  }
+  const b = state.map.getBounds();
+  const c = state.map.getCenter();
+  const f = state.filter || 'all';
+  const inView = state.venues
+    .filter(v => v.pin_status !== 'pending' && v.lat != null && v.lng != null)
+    .filter(v => f === 'all' || f === 'event' || v.type === f)
+    .filter(v => b.contains([v.lng, v.lat]))
+    .map(v => ({ v, d: (v.lat - c.lat) ** 2 + ((v.lng - c.lng) * Math.cos(c.lat * Math.PI / 180)) ** 2 }))
+    .sort((a, z) => a.d - z.d)
+    .slice(0, PEEK_MAX)
+    .map(x => x.v);
+  if (!inView.length) { peek.hidden = true; app.classList.remove('has-peek'); return; }
+  peek.innerHTML = inView.map(v => {
+    const st = openStatus(v);
+    const img = v.photos?.length ? cloudinaryUrl(v.photos[0], 160) : venueTileUri(v.short_name || v.name, v.type, false);
+    return `<button type="button" class="peek-card${st.open ? '' : ' closed'}" data-open-venue="${esc(v.id)}">
+      <img src="${esc(img)}" alt="" loading="lazy">
+      <span class="peek-body"><span class="peek-name">${esc(v.short_name || v.name)}</span>
+      <span class="peek-sub${st.open ? ' open' : ''}">${esc(st.label)}</span></span></button>`;
+  }).join('');
+  peek.hidden = false;
+  app.classList.add('has-peek');
 }
 
 /* ---------- geolocation ---------- */
@@ -311,11 +446,22 @@ async function requestLocation() {
     // waiting on a cold GPS lock (up to 10s) — plenty for routing and for
     // the check-in radius (the server's, see state.checkinRadiusM). refineLocation() chases a sharper fix
     // afterwards in the background without making the caller wait for it.
-    const pos = await new Promise((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false, timeout: 4000, maximumAge: 300000
-      })
-    );
+    const ask = (opts) => new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, opts));
+    let pos;
+    try {
+      pos = await ask({ enableHighAccuracy: false, timeout: 4000, maximumAge: 300000 });
+    } catch (coarseErr) {
+      /* The coarse fix comes from wifi/cell positioning. A device that has
+         none answering — wifi off, a fresh phone, the Android emulator,
+         whose network provider never reports — times out (3) or says
+         unavailable (2) even though GPS would answer. Ask once more with
+         GPS before telling the person we can't find them. Denied (1) is
+         final: asking again can't change the answer. */
+      if (coarseErr?.code !== 2 && coarseErr?.code !== 3) throw coarseErr;
+      geoDebug(`[geo] coarse error code=${coarseErr.code}, retrying with GPS`);
+      pos = await ask({ enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 });
+    }
     state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     state.geoError = null;
     geoDebug('[geo] coarse success');
@@ -624,7 +770,7 @@ async function boot() {
     // the same moment but deliberately not awaited, and reconciled against
     // the bundle by refreshVenuesFromLive() further down.
     const pre = window.__boot || {};
-    const livePromise = (pre.live || fetch('/api/venues').then(r => r.json()))
+    const livePromise = (pre.live || apiFetch('/api/venues').then(r => r.json()))
       .catch(e => { console.warn('[muan] live venues fetch failed', e); return null; });
 
     /* These three used to be one Promise.all whose rejection fell through to
@@ -689,6 +835,7 @@ async function boot() {
     state.picks = picks;
 
     initTheme();
+    initNativeBackButton();
     document.querySelector('.brand-mark').innerHTML = logoMark(17, 'var(--ink2)');
     document.getElementById('locateIcon').innerHTML = icoLocate(15);
     document.getElementById('navHomeIcon').innerHTML = icoHomeNav(21);
@@ -702,10 +849,20 @@ async function boot() {
     // doesn't block or delay anything else in boot(); a signed-out visitor
     // just gets signed_out:true back and the button stays on the chibi/
     // emoji fallback it already shows.
-    const mePromise = fetch('/api/me').then(r => r.json()).catch(() => ({ ok: false }));
+    const mePromise = apiFetch('/api/me').then(r => r.json()).catch(() => ({ ok: false }));
     mePromise.then(me => {
       if (me?.ok && !me.signed_out) {
         applyAvatarUrl(me.avatar_url || null);
+        // where this person has been, for the Top lists' "been" marks
+        state.myCounts = me.venue_counts || {};
+        state.myReactions = me.reactions || {};
+        state.me = me;
+        if (state.screen === 'home' && state.sheetView?.type === 'home') {
+          const sh = document.getElementById('sheet');
+          const y = sh ? sh.scrollTop : 0;
+          renderHomeSheet();
+          if (sh) sh.scrollTop = y;
+        }
         loadOwnPending().catch(() => {});
       }
     });
@@ -755,7 +912,7 @@ async function boot() {
     // and against a #sheetInner that's already been re-rendered since this
     // fetch started (a filter switch, or requestLocation() below landing
     // first), which would insert the bar into a *different* screen's content.
-    fetch('/api/weather')
+    apiFetch('/api/weather')
       .then(r => r.ok ? r.json() : Promise.reject(new Error('weather fetch failed: ' + r.status)))
       .then(d => (d?.ok ? d : null))
       .catch(e => { console.warn('[muan] weather unavailable', e); return null; })
@@ -1079,6 +1236,7 @@ function applyTheme() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   if (state.map && state.theme !== theme) state.map.setStyle(mapStyle(theme));
   state.theme = theme;
+  nativeBars(theme);
 }
 
 /* boot() calls this instead of applyTheme() for the very first paint — the
@@ -1099,6 +1257,7 @@ function initTheme() {
   // browser bar colour is set here
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#FFFCF5' : '#141215');
   state.theme = theme;
+  nativeBars(theme);
 }
 
 const AVATARS = ['#E8B98A|#1C1726','#C98E6B|#131019','#E8B98A|#7C5CE0','#C98E6B|#1FBF9C','#8A5A3B|#FF5A3C','#E8B98A|#FFC24B'];
@@ -1107,7 +1266,7 @@ const AVATARS = ['#E8B98A|#1C1726','#C98E6B|#131019','#E8B98A|#7C5CE0','#C98E6B|
 const ITEMS = [
   { id:'coffee', type:'cafe',  need:3,  name:'Coffee cup',   name_lo:'ຈອກກາເຟ', where:'cafés' },
   { id:'beer',   type:'bar',   need:3,  name:'Beer mug',     name_lo:'ຈອກເບຍ', where:'bars' },
-  { id:'ticket', type:'venue', need:3,  name:'Ticket stub',  name_lo:'ປີ້', where:'markets' },
+  { id:'ticket', type:'venue', need:3,  name:'Ticket stub',  name_lo:'ປີ້', where:'markets and malls' },
   { id:'crown',  type:'any',   need:20, name:'Explorer cap', name_lo:'ໝວກນັກສຳຫຼວດ', where:'places' },
 ];
 
@@ -1142,10 +1301,11 @@ function earnedItems(venueCounts) {
   return itemProgress(venueCounts).filter(it => it.earned);
 }
 
-/* must stay in sync with RIVERSIDE_VENUES in functions/api/checkin.js */
+/* must stay in sync with RIVERSIDE_VENUES in functions/api/_riverside.js */
 const RIVERSIDE = [
   'chokdee-cafe', 'sinouk-khemkhong', 'night-street',
-  'vte-night-market', 'baron', 'mahasan', 'rustic-white', 'seventh-heaven'
+  'vte-night-market', 'baron', 'mahasan', 'rustic-white', 'seventh-heaven',
+  'kong-view',
 ];
 
 const total = c => Object.values(c).reduce((a,b) => a+b, 0);
@@ -1165,6 +1325,17 @@ const BADGES = [
       hint: 'riverside places' }) },
   { id:'night-owl', name:'Night Owl', icon:'🌙',
     progress: () => ({ have: 0, need: 1, hint: 'check in after midnight' }) },
+  // migrations/019 — the second argument is /api/me, for the ones that count
+  // nights or months rather than places
+  { id:'cafe-hunter', name:'Café Hunter',
+    progress: c => ({ have: Object.keys(c).filter(id => venueById(id)?.type === 'cafe').length, need: 5 }) },
+  { id:'bar-hopper', name:'Bar Hopper', progress: () => ({ have: 0, need: 1 }) },
+  { id:'sunset', name:'Sunset', progress: () => ({ have: 0, need: 1 }) },
+  { id:'early-bird', name:'Early Bird', progress: () => ({ have: 0, need: 1 }) },
+  { id:'ten-nights', name:'Ten Nights Out', progress: (c, me) => ({ have: me?.nights_total || 0, need: 10 }) },
+  { id:'streak-3', name:'3-Month Streak', progress: (c, me) => ({ have: me?.streak_now || 0, need: 3 }) },
+  { id:'streak-6', name:'6-Month Streak', progress: (c, me) => ({ have: me?.streak_now || 0, need: 6 }) },
+  { id:'streak-12', name:'Year of Fire', progress: (c, me) => ({ have: me?.streak_now || 0, need: 12 }) },
 ];
 
 /* items sit in their own quadrant so they never overlap: ticket upper-left
@@ -1398,6 +1569,15 @@ function loadGoogleSignIn() {
 }
 
 async function initGoogleSignIn(containerId) {
+  if (IS_APP) {
+    // Google refuses its web sign-in inside an app's built-in browser
+    // ("disallowed_useragent"), so the app needs Google's native sign-in —
+    // stage 3 in app/README.md. Until then, say so rather than show a
+    // button that can only fail.
+    const el = document.getElementById(containerId);
+    if (el) el.innerHTML = '<div class="gsi-app-note">Signing in inside the app is coming soon. Saving places and the wheel work without it.</div>';
+    return;
+  }
   if (!(await loadGoogleSignIn())) {
     console.warn('[muan] Google sign-in script unavailable');
     return;
@@ -1420,12 +1600,14 @@ async function initGoogleSignIn(containerId) {
         else console.warn('[muan] sign-in:', text);
       };
       try {
-        const r = await fetch('/api/auth/google', {
+        const r = await apiFetch('/api/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ credential: resp.credential }),
         });
         const data = await r.json().catch(() => null);
+        // the phone app gets its session back as a token (see apiFetch)
+        if (data?.ok && IS_APP && data.token) setAppToken(data.token);
         if (data?.ok) openFlameSheet();
         else say("Couldn't sign you in. Please try again.");
       } catch (e) {
@@ -1449,11 +1631,65 @@ async function initGoogleSignIn(containerId) {
    A failure now flashes the control they pressed. It cannot be a sheet-level
    message, because the sheet has just been rebuilt by openFlameSheet() —
    hence the await. */
+/* Delete account (Nov 2026). Apple requires it in the app, and the privacy
+   policy promises it. One clear screen saying exactly what goes and what
+   stays, then a plain red button. No typing your name: Apple asks that
+   deleting be as easy as signing up was. The server does the deleting
+   (functions/api/me/delete.js); here we only ask, show the result and
+   forget the token. */
+function openDeleteAccount(me) {
+  setSheetView({ type: 'delete-account', venueId: null });
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title">Delete your account?</div><div class="pg-title-en">${me.handle ? '@' + esc(me.handle) : ''}</div></div>
+    </div>
+    <div class="fl-card del-card">
+      <p class="del-lead">This deletes your account and everything in it, for good. It can't be undone.</p>
+      <div class="del-h">What gets deleted</div>
+      <ul class="del-list">
+        <li>Your ${plural(me.total_checkins || 0, 'check-in', 'check-ins')} and ${(me.embers_total || 0).toLocaleString('en')} embers</li>
+        <li>Your level, badges, challenges and streak</li>
+        <li>Your "How was it?" ratings and rankings</li>
+        <li>Your username and profile photo</li>
+      </ul>
+      <div class="del-h">What stays</div>
+      <ul class="del-list">
+        <li>Places you saved stay on this phone. They were never in your account.</li>
+        <li>Venues you listed stay on Paisaidee. You just stop being their manager.</li>
+      </ul>
+      <p class="del-err" id="delErr" role="alert"></p>
+      <button type="button" class="btn del-btn" data-confirm-delete>Delete my account</button>
+      <button type="button" class="btn btn-back" data-back style="width:100%;margin-top:8px;">Keep my account</button>
+    </div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', openFlameSheet));
+  const btn = document.querySelector('#sheetInner [data-confirm-delete]');
+  btn?.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const err = document.getElementById('delErr');
+    try {
+      const r = await apiFetch('/api/me/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || !out.ok) throw new Error(out.error || "Couldn't delete your account just now. Nothing was deleted. Please try again.");
+      setAppToken(null);
+      state.me = null; state.myCounts = {}; state.myReactions = {};
+      await openFlameSheet();
+      showToast('Your account has been deleted.');
+    } catch (e) {
+      if (err) err.textContent = e.message;
+      btn.disabled = false; btn.textContent = 'Delete my account';
+    }
+  });
+}
+
 async function signOut() {
   let ok = false;
   try {
-    const r = await fetch('/api/auth/logout', { method: 'POST' });
+    const r = await apiFetch('/api/auth/logout', { method: 'POST' });
     ok = r.ok;
+    if (ok) setAppToken(null);
   } catch (e) { console.warn('[muan] sign-out failed', e); }
   await openFlameSheet();
   if (!ok) flashLabel(document.querySelector('[data-sign-out]'), "Couldn't sign out — still signed in", 4000);
@@ -1562,9 +1798,9 @@ async function openFlameSheet() {
   toggleSheet(false);
   setSheetView({ type: 'flame', venueId: null });
   setMobileScreen('you');
-  setSheet('<div class="s-sub" style="text-align:center;padding:30px 0;">Loading your flame…</div>');
+  setSheet(youSkeletonHtml());
   let me = null;
-  try { me = await (await fetch('/api/me')).json(); } catch(e) { console.warn('[muan] /api/me failed', e); }
+  try { me = await (await apiFetch('/api/me')).json(); } catch(e) { console.warn('[muan] /api/me failed', e); }
   if (!me || !me.ok) {
     /* "try again" with nothing to try it with was a dead end: the only way
        back was to leave the screen and come back, which is not obvious and
@@ -1597,6 +1833,7 @@ async function openFlameSheet() {
         <div class="fl-sub">Sign in to check in, keep streaks and earn embers</div>
         <div id="gsi-btn" style="display:flex;justify-content:center;margin:18px 0;"></div>
         <div id="gsi-err" class="hint" style="text-align:center;margin:-6px 0 10px;" hidden></div>
+        <p class="fl-legal">By signing in you agree to the ${legalLinks()}.</p>
         ${savedCardHtml()}
         <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       </div>
@@ -1633,7 +1870,7 @@ async function openFlameSheet() {
 // as if nobody owned anything — no error, no retry, nothing to see it by.
 async function fetchMyVenues() {
   try {
-    const data = await (await fetch('/api/my-venues')).json();
+    const data = await (await apiFetch('/api/my-venues')).json();
     return data.ok ? { ok: true, venues: data.venues } : { ok: false, venues: [] };
   } catch (e) {
     return { ok: false, venues: [] };
@@ -1646,7 +1883,7 @@ async function fetchMyVenues() {
 // from "the request failed," or a broken endpoint just looks like a quiet day.
 async function fetchPendingVenues() {
   try {
-    const data = await (await fetch('/api/pending')).json();
+    const data = await (await apiFetch('/api/pending')).json();
     return data.ok ? { ok: true, venues: data.venues } : { ok: false, venues: [] };
   } catch (e) {
     return { ok: false, venues: [] };
@@ -1686,7 +1923,7 @@ function renderFlameIntro(flameHtml, onDone) {
     requestAnimationFrame(() => flameEl?.setAttribute('data-heat', 'burning'));
   }
   document.querySelector('[data-intro-done]')?.addEventListener('click', async () => {
-    try { await fetch('/api/intro-seen', { method: 'POST' }); } catch (e) {}
+    try { await apiFetch('/api/intro-seen', { method: 'POST' }); } catch (e) {}
     onDone();
   });
 }
@@ -1743,6 +1980,105 @@ function flameInviteHtml(flameHtml, totalCheckins) {
 // numbers, no week markers, no scale — so it was decoration; the same data
 // as a sentence ("3 nights out in September") is the thing the dots were
 // standing in for.
+/* ---------- Levels ----------
+   One number that always moves. Level comes from your embers total, so
+   nothing new is stored: it's worked out here from /api/me's embers_total.
+   Each level costs 25 more than the last (50, 75, 100, …), so the first
+   few come within days and later ones take weeks:
+     L2 50 · L3 125 · L5 350 · L10 1,350 · L15 2,975 · L20 5,225 embers.
+   At about 2 nights out a week (new places and repeats, plus the monthly
+   challenge) that's L5 in a month, L10 in about three, L20 in about a year.
+   The "next" line only names rewards that exist today (Phai's stages, at
+   phai_thresholds). Level rewards for the new pet come with the pet. */
+const LEVEL_CAP = 50;
+function levelInfo(embers) {
+  let level = 1, floor = 0, cost = 50;
+  while (level < LEVEL_CAP && embers >= floor + cost) { floor += cost; level++; cost += 25; }
+  return { level, floor, next: level < LEVEL_CAP ? floor + cost : null, into: embers - floor, need: cost };
+}
+function levelOfEmbers(e) { return levelInfo(e).level; }
+
+function levelCardHtml(me, flameHtml, monthName) {
+  const e = me.embers_total || 0, L = levelInfo(e);
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const ni = PHAI_STAGES.indexOf(me.phai_stage) + 1;
+  const nextStage = ni > 0 && ni < PHAI_STAGES.length ? { st: PHAI_STAGES[ni], at: t[ni] } : null;
+  const nights = (me.checkin_days || []).length;
+  const streak = me.streak_now ?? me.streak_months ?? 0;
+  return `
+    <div class="fl-card fl-card-level">
+      <div class="lv-top">
+        <div class="fl-flame lv-flame" data-heat="${me.heat_level}">${flameHtml}</div>
+        <div class="lv-main">
+          <div class="lv-label">Level <b>${L.level}</b></div>
+          <div class="lv-stage">${esc(STAGE_LABELS[me.phai_stage] || '')} · <span class="lao">${esc(STAGE_LO[me.phai_stage] || '')}</span></div>
+        </div>
+        <div class="lv-embers"><b>${e.toLocaleString('en')}</b><span>embers</span></div>
+      </div>
+      ${L.next != null
+        ? `${goalBarHtml(L.into / L.need)}<div class="lv-next"><b>${L.next - e}</b> embers to Level ${L.level + 1}</div>`
+        : `<div class="lv-next">The top level. Every night out still counts.</div>`}
+      ${nextStage ? `<div class="lv-reward">Next: Phai grows into <b>${esc(STAGE_LABELS[nextStage.st])}</b> at Level ${levelOfEmbers(nextStage.at)}</div>` : ''}
+      <div class="lv-facts">
+        <span>${plural(nights, 'night', 'nights')} out in ${esc(monthName)}</span>
+        ${streak > 0 ? `<span>${streak}-month streak</span>` : ''}
+      </div>
+      <button type="button" class="fl-progress-link" data-open-progress>See all your progress ›</button>
+    </div>`;
+}
+
+// Progress: the ladder around where you are (two back, five ahead),
+// with Phai's stages marked on the level they arrive at
+function levelLadderHtml(me) {
+  const e = me.embers_total || 0, L = levelInfo(e);
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const stageAt = {};
+  PHAI_STAGES.forEach((st, i) => { if (i) stageAt[levelOfEmbers(t[i])] = st; });
+  const from = Math.max(1, L.level - 2), to = Math.min(LEVEL_CAP, L.level + 5);
+  let floor = 0, cost = 50;
+  const rows = [];
+  for (let n = 1; n <= to; n++) {
+    if (n >= from) {
+      const st = n < L.level ? 'done' : n === L.level ? 'now' : 'next';
+      rows.push(`<div class="lv-row ${st}">
+        <span class="lv-n">${n}</span>
+        <span class="lv-row-body"><span class="lv-row-at">${floor.toLocaleString('en')} embers</span>
+          ${stageAt[n] ? `<span class="lv-row-reward">Phai becomes ${esc(STAGE_LABELS[stageAt[n]])}</span>` : ''}
+          ${st === 'now' && L.next != null ? goalBarHtml(L.into / L.need) : ''}</span>
+        ${st === 'done' ? '<span class="pg-tick" aria-label="reached">✓</span>' : st === 'now' ? '<span class="lv-here">you</span>' : ''}
+      </div>`);
+    }
+    floor += cost; cost += 25;
+  }
+  return `<div class="lv-ladder">${rows.join('')}</div>
+    <div class="fl-goal-tip">A new place earns <b>${me.ember_new_venue || 25}</b> embers, going back earns ${me.ember_repeat || 5}, and this month's challenge adds 50.</div>`;
+}
+
+// the top of You: who you are, small. Same ids as the old identity card
+// (#pfpBtn, #pfpLink, #pfpFile, #pfpErr) so js/avatar.js wires it as before.
+function profileHeaderHtml(me, avatarIndex, items) {
+  const earnedIds = items.filter(it => it.earned).map(it => it.id);
+  const chibi = avatarIndex !== null ? avatarSVG(+avatarIndex, 64, earnedIds) : '😊';
+  return `
+    <div class="pf-head">
+      <button type="button" class="fl-avatar pf-avatar" id="pfpBtn" aria-label="${me.avatar_url ? 'Change your photo' : 'Add a photo'}">
+        ${me.avatar_url ? `<img class="fl-avatar-photo" src="${esc(cloudinaryAvatarUrl(me.avatar_url, 128))}" alt="">` : chibi}
+      </button>
+      <div class="pf-who">
+        <div class="pf-name">${me.handle ? `@${esc(me.handle)}` : 'You'}</div>
+        <div class="pf-sum">${plural(me.venues_explored || 0, 'place', 'places')} · ${plural(me.total_checkins || 0, 'check-in', 'check-ins')}</div>
+        <div class="pf-actions">
+          <button class="fl-avatar-link" id="pfpLink">${me.avatar_url ? 'Change photo' : 'Add a photo'}</button>
+          ${me.avatar_url
+            ? `<button class="fl-avatar-link" data-remove-pfp>Remove</button>`
+            : `<button class="fl-avatar-link" data-open-avatar>Change avatar</button>`}
+        </div>
+      </div>
+      <input type="file" id="pfpFile" accept="image/*" hidden>
+    </div>
+    <div class="fl-pfp-err" id="pfpErr"></div>`;
+}
+
 function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName) {
   const nights = me.checkin_days.length;
   return `
@@ -1758,6 +2094,7 @@ function flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName
         ? `<b>${nights}</b> ${nights === 1 ? 'night' : 'nights'} out in ${monthName}`
         : `no nights out yet in ${monthName}`}</div>
       ${streakLineHtml(me)}
+      <button type="button" class="fl-progress-link" data-open-progress>See all your progress ›</button>
     </div>`;
 }
 
@@ -1865,10 +2202,16 @@ function nextUpHtml(me, items, stageLabels, stageLo) {
     const left = Math.max(0, me.next_stage_at - me.embers_total);
     const per = me.ember_new_venue || 25;
     const places = Math.max(1, Math.ceil(left / per));
+    // "about 72 new places" when there are 45 left to find would be a
+    // promise the city can't keep — say what actually gets you there
+    const unfound = state.venues.filter(v => v.pin_status !== 'pending' && !(me.venue_counts || {})[v.id]).length;
+    const how = places <= unfound
+      ? `about ${plural(places, 'new place', 'new places')}`
+      : 'new places and going back both count';
     goals.push({
       ico: mascotHtml('idle', 'fl-goal-phai'),
       title: `Phai becomes ${esc(stageLabels[me.next_stage])} · <span class="lao">${esc(stageLo[me.next_stage])}</span>`,
-      sub: `${left} embers to go — about ${plural(places, 'new place', 'new places')}`,
+      sub: `${left} embers to go — ${how}`,
       p: (me.embers_total - floor) / Math.max(1, me.next_stage_at - floor),
     });
   }
@@ -2073,7 +2416,7 @@ async function recapImageBlob(me) {
   g.fillStyle = '#2A2419'; g.font = font(500, 50);
   g.fillText(top ? `Most visited: ${top.short_name || top.name}` : 'in Vientiane', W / 2, 1500);
   g.fillStyle = '#E8462A'; g.beginPath(); if (g.roundRect) g.roundRect(W / 2 - 300, 1690, 600, 110, 55); else g.rect(W / 2 - 300, 1690, 600, 110); g.fill();
-  g.fillStyle = '#FFFCF5'; g.font = font(700, 46); g.fillText(location.host, W / 2, 1762);
+  g.fillStyle = '#FFFCF5'; g.font = font(700, 46); g.fillText(new URL(SITE_ORIGIN).host, W / 2, 1762);
   return new Promise(res => c.toBlob(res, 'image/png'));
 }
 
@@ -2093,13 +2436,357 @@ async function shareRecap(me) {
     if (e && e.name === 'AbortError') return;
     console.warn('[muan] recap image share failed, sharing text instead', e);
   }
-  return shareOrCopy({ title: 'Paisaidee', text, url: location.origin + '/', copied: 'Copied — paste it anywhere' });
+  return shareOrCopy({ title: 'Paisaidee', text, url: SITE_ORIGIN + '/', copied: 'Copied — paste it anywhere' });
 }
 
 // the normal You screen — the flame (or an invitation in its place), the
 // identity card, then the plain owner/admin rows. Split out of
 // openFlameSheet() so renderFlameIntro()'s "Got it" can hand off into it
 // directly.
+/* ---------- Progress page (openProgressSheet()) ----------
+   Everything the game counts, on one screen, each with how far there is to
+   go: Phai's five stages as a path, where this month's embers came from,
+   the latest check-ins and what each paid, the monthly streak as a row of
+   months, every badge and avatar item with a progress bar. The You screen
+   shows the nearest goals; this is the whole map of them.
+   All numbers come from /api/me; the client only lays them out. */
+const PHAI_STAGES = ['ember', 'flicker', 'flame', 'blaze', 'naga'];
+const STAGE_LABELS = { ember: 'Ember', flicker: 'Flicker', flame: 'Flame', blaze: 'Blaze', naga: 'Naga fire' };
+const STAGE_LO = { ember: 'ຖ່ານໄຟ', flicker: 'ໄຟວິບວັບ', flame: 'ແປວໄຟ', blaze: 'ໄຟລຸກ', naga: 'ໄຟນາກ' };
+// until Kar's stage art exists (assets/art/phai-stage-N.png), Phai grows
+// through the poses we have, smallest first
+const STAGE_POSE = { ember: 'resting', flicker: 'idle', flame: 'wink', blaze: 'delighted', naga: 'looking-over' };
+const STAGE_SIZE = { ember: 34, flicker: 40, flame: 46, blaze: 52, naga: 58 };
+
+function phaiPathHtml(me) {
+  const t = me.phai_thresholds || [0, 100, 400, 1200, 3000];
+  const cur = PHAI_STAGES.indexOf(me.phai_stage);
+  return `<div class="pg-path">${PHAI_STAGES.map((st, i) => {
+    const state = i < cur ? 'done' : i === cur ? 'now' : 'next';
+    let sub;
+    if (state === 'done') sub = `reached · ${t[i]} embers`;
+    else if (state === 'now') {
+      sub = i + 1 < PHAI_STAGES.length
+        ? `you are here · ${t[i + 1] - me.embers_total} to ${STAGE_LABELS[PHAI_STAGES[i + 1]]}`
+        : 'you are here · the highest stage';
+    } else sub = `${t[i]} embers`;
+    const p = state === 'now' && i + 1 < t.length
+      ? (me.embers_total - t[i]) / Math.max(1, t[i + 1] - t[i]) : null;
+    const size = STAGE_SIZE[st];
+    return `<div class="pg-stage ${state}">
+      <span class="pg-stage-art"><img src="assets/mascot/phai-${STAGE_POSE[st]}.svg" alt="" width="${size}" height="${Math.round(size * 1.2)}" loading="lazy" draggable="false"></span>
+      <span class="pg-stage-body">
+        <span class="pg-stage-name">${STAGE_LABELS[st]} · <span class="lao">${STAGE_LO[st]}</span></span>
+        <span class="pg-stage-sub">${sub}</span>
+        ${p !== null ? goalBarHtml(p) : ''}
+      </span>
+      ${state === 'done' ? '<span class="pg-tick" aria-label="reached">✓</span>' : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function emberSourcesHtml(me) {
+  const nw = me.ember_new_venue || 25, rp = me.ember_repeat || 5;
+  return `
+    <div class="pg-rows">
+      <div class="pg-row"><span>A place you've never checked in at</span><b>+${nw}</b></div>
+      <div class="pg-row"><span>Going back (first 2 times a month)</span><b>+${rp}</b></div>
+      <div class="pg-row"><span>Going back (3rd to 6th time)</span><b>+2</b></div>
+      <div class="pg-row"><span>After that</span><b>+1</b></div>
+    </div>
+    <div class="pg-note">Up to 100 embers a day and 6 check-ins a night. New places pay the most, so the city is the game.</div>`;
+}
+
+function recentCheckinsHtml(me) {
+  const rows = (me.recent || []).map(r => {
+    const v = venueById(r.venue_id);
+    const name = v ? (v.short_name || v.name) : 'A place no longer listed';
+    const why = r.embers >= (me.ember_new_venue || 25) ? 'first visit'
+      : r.embers === 0 ? 'daily cap reached' : 'going back';
+    return `<div class="pg-row pg-recent"${v ? ` role="button" tabindex="0" data-open-venue="${esc(v.id)}"` : ''}>
+      <span><span class="pg-recent-name">${esc(name)}</span><span class="pg-recent-sub">${esc(shortDate(r.created_at))} · ${why}</span></span>
+      <b>+${r.embers}</b></div>`;
+  });
+  return rows.length ? `<div class="pg-rows">${rows.join('')}</div>`
+    : `<div class="pg-note">Your check-ins and what they earned will list here.</div>`;
+}
+
+// the last 12 months as dots, lit for months with a check-in; the streak
+// is the run of lit months ending this month or last
+function streakMonthsHtml(me) {
+  const active = new Set(me.months_active || []);
+  const months = [];
+  const [y, m] = (me.month || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    months.push(d.toISOString().slice(0, 7));
+  }
+  let best = 0, run = 0;
+  [...active].sort().forEach((mo, i, arr) => {
+    const prev = i && new Date(Date.UTC(+arr[i - 1].slice(0, 4), +arr[i - 1].slice(5, 7), 1)).toISOString().slice(0, 7);
+    run = i && prev === mo ? run + 1 : 1;
+    best = Math.max(best, run);
+  });
+  const now = me.streak_now ?? 0;
+  return `
+    <div class="pg-months">${months.map(mo => {
+      const label = new Date(Date.UTC(+mo.slice(0, 4), +mo.slice(5, 7) - 1, 1)).toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+      return `<span class="pg-month${active.has(mo) ? ' on' : ''}${mo === me.month ? ' cur' : ''}"><i></i>${label.charAt(0)}</span>`;
+    }).join('')}</div>
+    <div class="pg-streak-nums">
+      <span><b>${now}</b> ${now === 1 ? 'month' : 'months'} now</span>
+      <span><b>${best}</b> best</span>
+      <span><b>${active.size}</b> ${active.size === 1 ? 'month' : 'months'} out in all</span>
+    </div>
+    ${streakLineHtml(me)}`;
+}
+
+function badgeProgressHtml(me) {
+  const counts = me.venue_counts || {};
+  const earned = new Map((me.badges || []).map(b => [b.id, b]));
+  const all = (me.all_badges?.length ? me.all_badges : (me.badges || []))
+    .slice().sort((a, b) => (earned.has(b.id) ? 1 : 0) - (earned.has(a.id) ? 1 : 0));
+  return `<div class="pg-list">${all.map(b => {
+    const rule = BADGES.find(x => x.id === b.id);
+    const got = earned.get(b.id);
+    const pr = rule ? rule.progress(counts, me) : { have: got ? 1 : 0, need: 1 };
+    const have = got ? pr.need : Math.min(pr.have, pr.need);
+    return `<div class="pg-item${got ? ' got' : ''}">
+      <span class="pg-item-ico">${badgeIcon(b, 22)}</span>
+      <span class="pg-item-body">
+        <span class="pg-item-name">${esc(b.name)}${got ? `<span class="pg-item-when">${esc(shortDate(got.earned_at))}</span>` : ''}</span>
+        <span class="pg-item-sub">${esc(b.description || '')}</span>
+        ${got ? '' : `${goalBarHtml(have / pr.need)}<span class="pg-item-count">${have} / ${pr.need}</span>`}
+      </span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function itemProgressListHtml(me) {
+  return `<div class="pg-list">${itemProgress(me.venue_counts || {}).map(it => `
+    <div class="pg-item${it.earned ? ' got' : ''}">
+      <span class="pg-item-ico">${itemIconSVG(it.id, 22)}</span>
+      <span class="pg-item-body">
+        <span class="pg-item-name">${esc(it.name)} · <span class="lao">${esc(it.name_lo)}</span></span>
+        <span class="pg-item-sub">${it.earned ? 'on your avatar' : `visit ${it.need} ${esc(it.where)}`}</span>
+        ${it.earned ? '' : `${goalBarHtml(it.have / it.need)}<span class="pg-item-count">${it.have} / ${it.need}</span>`}
+      </span>
+    </div>`).join('')}</div>`;
+}
+
+// TODO(lao): 'ຄວາມຄືບໜ້າ' for "Your progress"
+function openProgressSheet(me) {
+  if (!me) return openFlameSheet();
+  setSheetView({ type: 'progress', venueId: null });
+  setMobileScreen('you');
+  setSheet(`
+    <div class="pg-wrap">
+      <div class="pg-head">
+        <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+        <div>
+          <div class="pg-title lao">ຄວາມຄືບໜ້າ</div>
+          <div class="pg-title-en">Your progress</div>
+        </div>
+      </div>
+
+      <div class="pg-totals">
+        <div><b>${me.embers_total}</b><span>embers</span></div>
+        <div><b>${me.embers_month || 0}</b><span>this month</span></div>
+        <div><b>${me.venues_explored}</b><span>${me.venues_explored === 1 ? 'place' : 'places'}</span></div>
+        <div><b>${me.total_checkins}</b><span>check-ins</span></div>
+      </div>
+
+      <div class="fl-card"><div class="fl-card-h">Levels</div>${levelLadderHtml(me)}</div>
+      ${challengeCardHtml(me)}
+      ${nextUpHtml(me, itemProgress(me.venue_counts || {}), STAGE_LABELS, STAGE_LO)}
+      <div class="fl-card"><div class="fl-card-h">Phai's path</div>${phaiPathHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Monthly streak</div>${streakMonthsHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Badges · ${(me.badges || []).length} of ${(me.all_badges || []).length || (me.badges || []).length}</div>${badgeProgressHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">Avatar items</div>${itemProgressListHtml(me)}</div>
+      ${myRankingsHtml()}
+      <div class="fl-card"><div class="fl-card-h">Latest check-ins</div>${recentCheckinsHtml(me)}</div>
+      <div class="fl-card"><div class="fl-card-h">How embers work</div>${emberSourcesHtml(me)}</div>
+
+      <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>
+    </div>`);
+  const sheet = document.getElementById('sheet');
+  if (sheet) sheet.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', openFlameSheet));
+  // clicks on these rows are already wired by setSheet()'s [data-open-venue]
+  // pass; binding click here too opened the venue twice (two history
+  // entries, so Back needed two taps). Only the keyboard path is added here.
+  document.querySelectorAll('#sheetInner .pg-recent[data-open-venue]').forEach(el => {
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') openVenue(el.dataset.openVenue); });
+  });
+}
+
+/* ---------- "How was it?" (after a check-in, or from a venue page) ----------
+   One tap from three reactions, then — if you've rated other places of the
+   same kind the same way — "which did you like more?" a few times, a
+   binary search for where this one sits among them (Beli's trick: ranking
+   by comparison is quicker and more honest than picking a number). Saved
+   by POST /api/react; becomes "your #2 café" on the venue page and Your
+   rankings on You. Only for places you've checked in at. TODO(lao): the
+   reaction labels and 'ເຈົ້າມັກບ່ອນໃດກວ່າ?'. */
+const REACTIONS = [
+  { id: 'loved', en: 'Loved it', lo: 'ມັກຫຼາຍ' },
+  { id: 'fine', en: 'It was fine', lo: 'ກໍໄດ້ຢູ່' },
+  { id: 'not-for-me', en: 'Not for me', lo: 'ບໍ່ແມ່ນແນວຂ້ອຍ' },
+];
+const REACTION_ORDER = REACTIONS.map(r => r.id);
+
+// this person's places of one type, best first: reaction, then rank
+function myRanked(type) {
+  const rx = state.myReactions || {};
+  return Object.entries(rx)
+    .map(([id, r]) => ({ v: venueById(id), ...r }))
+    .filter(x => x.v && x.v.type === type)
+    .sort((a, b) => (REACTION_ORDER.indexOf(a.reaction) - REACTION_ORDER.indexOf(b.reaction))
+      || ((b.rank ?? 0) - (a.rank ?? 0)));
+}
+
+function myRankOf(v) {
+  const i = myRanked(v.type).findIndex(x => x.v.id === v.id);
+  return i < 0 ? null : i + 1;
+}
+
+function typeOne(type) {
+  return (VENUE_TYPE_META[type]?.one || 'place').toLowerCase();
+}
+
+// the venue page line: "You loved it · your #2 café · Change", or a nudge
+// to rate a place you've been to but haven't rated
+function myReactionLineHtml(v) {
+  if (!state.myCounts?.[v.id]) return '';
+  const r = state.myReactions?.[v.id];
+  if (!r) return `<button type="button" class="vd-myrx vd-myrx-ask" data-rate-venue="${esc(v.id)}">How was it? Rate this place ›</button>`;
+  const label = REACTIONS.find(x => x.id === r.reaction);
+  const n = myRankOf(v);
+  return `<div class="vd-myrx">You: <b>${esc(label?.en || '')}</b>${n ? ` · your #${n} ${esc(typeOne(v.type))}` : ''}
+    <button type="button" class="vd-myrx-change" data-rate-venue="${esc(v.id)}">Change</button></div>`;
+}
+
+function rxSheet(innerHtml) {
+  document.querySelector('.rx-pop')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'wheel-pop rx-pop';
+  ov.innerHTML = `<div class="wheel-sheet rx-sheet" role="dialog" aria-modal="true" aria-label="How was it?">
+    <div class="wheel-grip"></div>${innerHtml}</div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
+  return ov;
+}
+function rxClose(ov) { ov.classList.remove('show'); setTimeout(() => ov.remove(), 240); }
+
+function rxVenueCard(v, attr) {
+  const img = v.photos?.length ? cloudinaryUrl(v.photos[0], 400) : venueTileUri(v.short_name || v.name, v.type, true);
+  return `<button type="button" class="rx-card" ${attr}>
+    <img src="${esc(img)}" alt="" loading="eager"><span>${esc(v.short_name || v.name)}</span></button>`;
+}
+
+async function askHowWasIt(venueId, then) {
+  const v = venueById(venueId);
+  if (!v) { then?.(); return; }
+  const done = () => { then?.(); };
+  const ov = rxSheet(`
+    <div class="wheel-head"><span class="wheel-title">How was ${esc(v.short_name || v.name)}?</span>
+      <button type="button" class="wheel-close" aria-label="Skip">✕</button></div>
+    <div class="wheel-body rx-body">
+      ${REACTIONS.map(r => `<button type="button" class="rx-btn rx-${r.id}" data-rx="${r.id}">
+        <span class="lao">${esc(r.lo)}</span><span>${esc(r.en)}</span></button>`).join('')}
+      <button type="button" class="rx-skip" data-rx-skip>Not now</button>
+    </div>`);
+  ov.querySelector('.wheel-close').addEventListener('click', () => { rxClose(ov); done(); });
+  ov.querySelector('[data-rx-skip]').addEventListener('click', () => { rxClose(ov); done(); });
+  ov.addEventListener('click', e => { if (e.target === ov) { rxClose(ov); done(); } });
+  ov.querySelectorAll('[data-rx]').forEach(b => b.addEventListener('click', async () => {
+    const reaction = b.dataset.rx;
+    // the others in the same group, best first — where does this one go?
+    const group = myRanked(v.type).filter(x => x.reaction === reaction && x.v.id !== v.id);
+    let lo = 0, hi = group.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const pick = await rxCompare(ov, v, group[mid].v);
+      if (pick === 'this') hi = mid;
+      else if (pick === 'other') lo = mid + 1;
+      else { lo = hi = mid; }                      // too close to call
+      if (pick === null) { rxClose(ov); done(); return; }
+    }
+    const above = group[lo - 1]?.rank, below = group[lo]?.rank;
+    const rank = above == null && below == null ? 0
+      : above == null ? (below ?? 0) + 1
+      : below == null ? above - 1
+      : (above + below) / 2;
+    try {
+      const r = await apiFetch('/api/react', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue_id: v.id, reaction, rank }),
+      });
+      if (!r.ok) throw new Error(r.status);
+      state.myReactions = { ...(state.myReactions || {}), [v.id]: { reaction, rank } };
+      const n = myRankOf(v);
+      showToast(n ? `${v.short_name || v.name} is your #${n} ${typeOne(v.type)}` : 'Saved');
+    } catch (e) {
+      console.warn('[muan] reaction not saved', e);
+      showToast("Couldn't save that — try again from the venue page");
+    }
+    rxClose(ov);
+    done();
+  }));
+}
+
+// one "which did you like more?" question; resolves 'this' | 'other' |
+// 'same' | null (closed)
+function rxCompare(ov, v, other) {
+  return new Promise(resolve => {
+    const sheet = ov.querySelector('.rx-sheet');
+    sheet.innerHTML = `<div class="wheel-grip"></div>
+      <div class="wheel-head"><span class="wheel-title">Which did you like more? · <span class="lao">ເຈົ້າມັກບ່ອນໃດກວ່າ?</span></span>
+        <button type="button" class="wheel-close" aria-label="Close">✕</button></div>
+      <div class="wheel-body">
+        <div class="rx-vs">${rxVenueCard(v, 'data-pick="this"')}<span class="rx-or">or</span>${rxVenueCard(other, 'data-pick="other"')}</div>
+        <button type="button" class="rx-skip" data-pick="same">Too close to call</button>
+      </div>`;
+    sheet.querySelector('.wheel-close').addEventListener('click', () => resolve(null));
+    sheet.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => resolve(b.dataset.pick)));
+  });
+}
+
+/* This month's challenge (functions/api/_challenges.js): one at a time,
+   the same for everyone, +50 embers once. Shown on You and Progress. */
+function challengeCardHtml(me) {
+  const c = me.challenge;
+  if (!c) return '';
+  const end = c.ends ? new Date(new Date(c.ends).getTime() - 1) : null;
+  const daysLeft = end ? Math.max(0, Math.ceil((end - Date.now()) / 86400000)) : null;
+  return `<div class="fl-card fl-card-challenge${c.done ? ' done' : ''}">
+    <div class="ch-top">
+      <span class="ch-label">This month's challenge</span>
+      <span class="ch-reward">${c.done ? 'done' : `+${c.embers} embers`}</span>
+    </div>
+    <div class="ch-title">${esc(c.title)}</div>
+    ${c.title_lo ? `<div class="ch-title-lo lao">${esc(c.title_lo)}</div>` : ''}
+    ${c.done
+      ? `<div class="ch-sub">Done — ${c.embers} embers added. A new one starts next month.</div>`
+      : `${goalBarHtml(c.have / c.need)}<div class="ch-sub">${c.have} of ${c.need}${daysLeft !== null ? ` · ${plural(daysLeft, 'day', 'days')} left` : ''}</div>`}
+  </div>`;
+}
+
+// "Your rankings" on You: your top three of each kind
+function myRankingsHtml() {
+  const types = ['bar', 'cafe', 'restaurant', 'venue'].map(t => ({ t, list: myRanked(t).slice(0, 3) })).filter(x => x.list.length);
+  if (!types.length) return '';
+  return `<div class="fl-card fl-card-rankings">
+    <div class="fl-card-h">Your rankings</div>
+    ${types.map(({ t, list }) => `
+      <div class="rk-type">${esc(VENUE_TYPE_META[t]?.label || t)}</div>
+      ${list.map((x, i) => `<button type="button" class="rk-row" data-open-venue="${esc(x.v.id)}">
+        <span class="rk-n">${i + 1}</span><span class="rk-name">${esc(x.v.short_name || x.v.name)}</span>
+        <span class="rk-rx">${esc(REACTIONS.find(r => r.id === x.reaction)?.en || '')}</span></button>`).join('')}`).join('')}
+    <div class="pg-note">From your "How was it?" answers. Rate a place from its page any time.</div>
+  </div>`;
+}
+
 function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues: [] }, pendingVenuesResult = { ok: true, venues: [] }) {
   const stageLabels = { ember:'Ember', flicker:'Flicker', flame:'Flame', blaze:'Blaze', naga:'Naga fire' };
   const stageLo = { ember:'ຖ່ານໄຟ', flicker:'ໄຟວິບວັບ', flame:'ແປວໄຟ', blaze:'ໄຟລຸກ', naga:'ໄຟນາກ' };
@@ -2117,19 +2804,25 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   // the one branch the whole screen turns on — see FLAME_INVITE_BELOW
   const inviting = me.total_checkins < FLAME_INVITE_BELOW;
 
+  /* Nov 2026: simplified. You is now who you are, your level, this
+     month's challenge, your places and your saved list. Everything else
+     (badges, avatar items, Next up, rankings, Phai's path, streak months,
+     how embers work) lives one tap away on Progress, where people who
+     want detail go looking for it. flameCardHtml(), identityCardHtml() and
+     nextUpHtml() stay in the file; Progress still uses nextUpHtml(). */
   setSheet(`
     <div class="fl-wrap">
 
+      ${profileHeaderHtml(me, avatarIndex, items)}
+
       ${inviting
         ? flameInviteHtml(flameHtml, me.total_checkins)
-        : flameCardHtml(me, flameHtml, stageLabels, stageLo, heatLines, monthName)}
+        : levelCardHtml(me, flameHtml, monthName)}
 
+      ${challengeCardHtml(me)}
       ${recapCardHtml(me)}
-      ${inviting ? '' : nextUpHtml(me, items, stageLabels, stageLo)}
       ${yourCityHtml(me)}
       ${savedCardHtml()}
-
-      ${identityCardHtml(me, avatarIndex, items)}
 
       <div class="fl-links">
         ${!myVenuesResult.ok ? `
@@ -2154,6 +2847,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
 
       <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       <button class="fl-signout" data-sign-out>Sign out</button>
+      <p class="fl-legal"><a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> · <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a> · <button type="button" class="fl-delete-link" data-delete-account>Delete account</button></p>
     </div>
   `);
   const sheet = document.getElementById('sheet');
@@ -2161,8 +2855,14 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   pauseFlameIfReducedMotion();
   bindSavedCard(document.getElementById('sheetInner'));
   document.querySelector('[data-share-recap]')?.addEventListener('click', () => shareRecap(me));
+  document.querySelector('[data-open-progress]')?.addEventListener('click', () => openProgressSheet(me));
+  // the Top lists mark places you've been (topRowHtml()) from this
+  state.myCounts = me.venue_counts || {};
+  state.myReactions = me.reactions || {};
+  state.me = me;
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
+  document.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteAccount(me));
 
   /* The avatar picker and the profile-photo upload are js/avatar.js now, so
      their handlers cannot be attached until it has loaded. openFlameSheet()
@@ -2338,7 +3038,7 @@ function initMap() {
     document.getElementById('map').classList.toggle('labels-hidden', state.map.getZoom() < 12.2);
   });
   state.map.on('zoomend', () => scheduleLabelCrowding());
-  state.map.on('moveend', () => scheduleLabelCrowding());
+  state.map.on('moveend', () => { scheduleLabelCrowding(); updateMapPeek(); });
   state.map.on('click', (e) => {
     if (e.originalEvent.target.closest('.marker')) return;
     if (state.selectedId) { stopTracking(); goHome(); }
@@ -2829,12 +3529,28 @@ function icoWaves(size) {
    run to ship (see CLAUDE.md's migration rules). Unknown codes fall back to
    the flame rather than to b.icon, so a badge added server-side can never
    put an emoji back on the screen. */
+// stroke icons for the 019 badges, same 24-unit, stroke-2 style as the rest
+const strokeIco = (d) => (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const icoCupBadge = strokeIco('<path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c-1 1.2 1 2 0 3.4M12 3c-1 1.2 1 2 0 3.4"/>');
+const icoCocktailBadge = strokeIco('<path d="M4 5h16l-8 9z"/><path d="M12 14v6M8 20h8"/><path d="m15 3 2 2"/>');
+const icoSunsetBadge = strokeIco('<path d="M3 18h18M6 14a6 6 0 0 1 12 0"/><path d="M12 4v3M4.9 7.9l1.6 1.6M19.1 7.9l-1.6 1.6"/>');
+const icoSunriseBadge = strokeIco('<circle cx="12" cy="13" r="4"/><path d="M12 3v2M4 13H2M22 13h-2M5.6 6.6 7 8M18.4 6.6 17 8M3 20h18"/>');
+const icoStarsBadge = strokeIco('<path d="m12 3 1.8 4.2 4.5.4-3.4 3 1 4.4L12 12.7 8.1 15l1-4.4-3.4-3 4.5-.4z"/><path d="M5 20h.01M12 20h.01M19 20h.01"/>');
 const BADGE_ICONS = {
   'first-fire': icoFlameNav,
   'explorer':   icoCompass,
   'regular':    icoChair,
   'riverside':  icoWaves,
   'night-owl':  icoMoon,
+  'cafe-hunter': icoCupBadge,
+  'bar-hopper':  icoCocktailBadge,
+  'sunset':      icoSunsetBadge,
+  'early-bird':  icoSunriseBadge,
+  'ten-nights':  icoStarsBadge,
+  'streak-3':    icoFlameNav,
+  'streak-6':    icoFlameNav,
+  'streak-12':   icoFlameNav,
 };
 function badgeIcon(b, size) {
   return (BADGE_ICONS[b.id] || icoFlameNav)(size);
@@ -3658,6 +4374,10 @@ function spinWheel() {
     if (winnerClosed) ov.querySelector(`[data-slice="${CSS.escape(winner.id)}"]`)?.classList.add('wheel-slice-closed');
     const res = ov.querySelector('.wheel-result');
     if (res) res.innerHTML = winnerClosed ? wheelClosedResultHtml(winner) : wheelResultCardHtml(winner);
+    if (!winnerClosed) {
+      revealWheelPick(ov, winner);
+      return;
+    }
     if (btn) {
       btn.disabled = false;
       // a shared wheel has exactly one answer — that is the feature, so there
@@ -3687,10 +4407,88 @@ function spinWheel() {
    ride along and each recipient drops them with the usual note. seed is the
    one already used here, so the sharer and every recipient see the same
    answer — including the sharer, who may have spun before sharing. */
+/* The payoff. The dial has stopped on an open place: the winning slice
+   pulses, the phone buzzes, confetti goes off over the wheel — and then,
+   rather than a small card to tap, the wheel steps aside for the place's
+   own page, with Phai's "picked this one" banner on top (pickBannerHtml())
+   and a second burst of confetti over it. A closed winner gets none of
+   this (see the closed branch in spinWheel()). */
+const PICK_REVEAL_MS = 1300;
+
+function revealWheelPick(ov, winner) {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ov.querySelector(`[data-slice="${CSS.escape(winner.id)}"]`)?.classList.add('wheel-slice-win');
+  ov.querySelector('.wheel-actions')?.classList.add('wheel-actions-out');
+  try { navigator.vibrate?.([30, 50, 90]); } catch (e) {}
+  const stage = ov.querySelector('.wheel-stage');
+  if (stage && !reduced) {
+    const box = document.createElement('div');
+    box.className = 'wheel-confetti';
+    stage.appendChild(box);
+    confettiSvg().then(html => playOnceInto(box, html, 2200));
+  }
+  const { pool, seed, shared } = wheelPop;
+  const pick = { id: winner.id, ids: pool.map(v => v.id), seed, shared, filter: state.filter };
+  setTimeout(() => {
+    if (!wheelPop || wheelPop.ov !== ov) return;   // closed during the pause
+    closeWheel();
+    state.wheelPick = pick;
+    openVenue(winner.id);
+    if (!reduced) {
+      const burst = document.createElement('div');
+      burst.className = 'pick-confetti';
+      document.body.appendChild(burst);
+      confettiSvg().then(html => playOnceInto(burst, html, 3000));
+      setTimeout(() => burst.remove(), 3100);
+    }
+  }, reduced ? 400 : PICK_REVEAL_MS);
+}
+
+// the top of a venue page that the wheel just picked. TODO(lao):
+// 'ໄຟເລືອກໃຫ້ແລ້ວ!' ("Phai picked it for you!").
+function pickBannerHtml(v) {
+  const p = state.wheelPick;
+  if (!p || p.id !== v.id) return '';
+  return `<div class="pick-banner" role="status">
+    <img class="pick-phai" src="assets/mascot/phai-delighted.svg" alt="" width="200" height="240" draggable="false">
+    <div class="pick-text">
+      <div class="pick-lo lao">ໄຟເລືອກໃຫ້ແລ້ວ!</div>
+      <div class="pick-en">Phai picked this one</div>
+    </div>
+    <div class="pick-actions">
+      ${p.shared ? '' : '<button type="button" class="pick-btn" data-pick-again>Spin again</button>'}
+      <button type="button" class="pick-btn pick-btn-share" data-pick-share aria-label="Share the result">${icoShare(16)}</button>
+    </div>
+  </div>`;
+}
+
+function bindPickBanner() {
+  const p = state.wheelPick;
+  if (!p) return;
+  document.querySelector('[data-pick-again]')?.addEventListener('click', () => {
+    state.wheelPick = null;
+    openWheel({ filter: p.filter });
+  });
+  document.querySelector('[data-pick-share]')?.addEventListener('click', () => {
+    const v = venueById(p.id);
+    const name = v ? (v.short_name || v.name) : '';
+    return shareOrCopy({
+      title: 'Paisaidee — the wheel picked',
+      text: `ໄຟເລືອກ ${name} ໃຫ້ແລ້ວ!\nThe wheel picked ${name}. Same wheel, same answer:`,
+      url: wheelShareUrl(p.ids, p.seed),
+      copied: 'Link copied — paste it to the group',
+    });
+  });
+}
+
+function wheelShareUrl(ids, seed) {
+  return `${SITE_ORIGIN}/?wheel=${ids.map(encodeURIComponent).join(',')}&seed=${seed}`;
+}
+
 function shareWheel() {
   if (!wheelPop) return;
   const { pool, seed } = wheelPop;
-  const url = `${location.origin}/?wheel=${pool.map(v => encodeURIComponent(v.id)).join(',')}&seed=${seed}`;
+  const url = wheelShareUrl(pool.map(v => v.id), seed);
   // TODO(lao): "ເລືອກບ່ອນໃດດີ?" is the phrasing given in the task, reused
   // here and in the overlay title and functions/index.js's og block so the
   // link, the preview and the page all say the same thing. Not yet checked
@@ -3794,7 +4592,23 @@ function mixHex(fromHex, toHex, amount) {
   return `#${chan(0)}${chan(2)}${chan(4)}`;
 }
 
-function venueTileUri(name, type, wide, showLetter = true) {
+/* Illustrated stand-ins for a venue with no photos yet (Kar's art,
+   assets/art/): one scene per type, used everywhere the drawn tile below
+   used to be — cards, the venue page header, the wheel, Your Vientiane.
+   Deliberately generic (a bar counter, a café table, a riverside market),
+   never a picture of any particular venue: it says "no photo yet", not
+   "this is the place". Types without art (restaurant) keep the tile. */
+const TYPE_COVER_ART = {
+  bar: 'assets/art/cover-bar.webp',
+  cafe: 'assets/art/cover-cafe.webp',
+  venue: 'assets/art/cover-market.webp',
+};
+
+// art = false: the drawn tile even where art exists — for the stand-in a
+// real photo is about to replace (collagePhotosHtml()'s lazy tiles), where
+// loading a picture only to swap it out would be a wasted request and a flash
+function venueTileUri(name, type, wide, showLetter = true, art = true) {
+  if (art && TYPE_COVER_ART[type]) return TYPE_COVER_ART[type];
   const letter = (name || '?').charAt(0).toUpperCase();
   const glyphKey = Object.hasOwn(TILE_GLYPHS, type) ? type : 'venue';
   // one neutral ink for all three types. This was --teal / --flame / --violet
@@ -3833,6 +4647,40 @@ function venueTileUri(name, type, wide, showLetter = true) {
 // needs a wrapper/ancestor with color set (var(--flame) unless the
 // surrounding background is already flame-coloured, e.g. .btn-go, where it
 // should inherit that button's existing --ink icon colour instead).
+/* ---------- skeleton loading ----------
+   Grey placeholder shapes in the layout of what's coming, with a soft
+   light sweeping across them (.sk in css/style.css), instead of a spinner
+   or "Loading…". The page looks almost ready straight away, and nothing
+   jumps when the real content lands, because it lands in the same places.
+   Photos get the same sweep on their own: any Cloudinary <img> shimmers
+   until it has loaded (see markLoadedImages() below). */
+function skLine(w, extra = '') { return `<div class="sk sk-line ${extra}" style="width:${w}%"></div>`; }
+function skRow() {
+  return `<div class="sk-row"><div class="sk sk-thumb"></div>
+    <div class="sk-row-text">${skLine(55)}${skLine(35, 'sk-sm')}</div></div>`;
+}
+// the You screen while /api/me (and the bits that come with it) load:
+// flame card, challenge card, then a short list, as on the real screen
+function youSkeletonHtml() {
+  return `<div class="fl-wrap sk-page" aria-busy="true" aria-label="Loading">
+    <div class="fl-card sk-card sk-center">
+      <div class="sk sk-circle"></div>${skLine(38, 'sk-lg')}${skLine(26, 'sk-sm')}${skLine(60)}
+    </div>
+    <div class="fl-card sk-card">${skLine(40, 'sk-sm')}${skLine(75, 'sk-lg')}<div class="sk sk-bar"></div></div>
+    <div class="fl-card sk-card">${skRow()}${skRow()}${skRow()}</div>
+  </div>`;
+}
+
+// marks every <img> once it has loaded (or failed), so the photo shimmer
+// in css/style.css stops. One listener on the document: load and error
+// don't bubble, but they do reach a capturing listener, so this covers
+// every image the app ever renders without touching each template.
+(function markLoadedImages() {
+  const done = e => { if (e.target?.tagName === 'IMG') e.target.classList.add('ld'); };
+  document.addEventListener('load', done, true);
+  document.addEventListener('error', done, true);
+})();
+
 function loadingRing(size = 28) {
   return `<svg class="lring" width="${size}" height="${size}" viewBox="0 0 44 44" aria-hidden="true">
     <circle class="lring-track" cx="22" cy="22" r="18" fill="none"
@@ -4111,10 +4959,10 @@ function collagePhotosHtml(v, altName) {
     return `<div class="collage-photos"><div class="collage-tile collage-tile-big solo">
       <img src="${phBig}" alt="${esc(altName)}"></div></div>`;
   }
-  const phSmall = venueTileUri(v.short_name || v.name, v.type, false);
+  const phSmall = venueTileUri(v.short_name || v.name, v.type, false, true, false);
   const n = Math.min(photos.length, 3);
   const extra = photos.length - 3;
-  const ring = `<span class="tile-loading">${loadingRing(24)}</span>`;
+  const ring = `<span class="tile-loading sk"></span>`;
   let html = `<div class="collage-photos">`;
   html += `<div class="collage-tile collage-tile-big${n === 1 ? ' solo' : ''}">
     <img src="${phBig}" data-src="${esc(cloudinaryUrl(photos[0], 600))}" alt="${esc(altName)}" loading="lazy" draggable="false">${ring}</div>`;
@@ -4494,7 +5342,7 @@ const WELCOME_SLIDES = [
     phai: 'phai-idle',
     titleLo: 'ໄປໃສດີ?',
     title: 'Where should we go?',
-    body: 'Cafés, bars and what’s on in Vientiane — every place checked by us, not scraped off the internet.',
+    body: 'Cafés, bars and what’s on in Vientiane, every place added by hand, not scraped off the internet.',
   },
   {
     key: 'open',
@@ -4514,14 +5362,30 @@ const WELCOME_SLIDES = [
     phai: 'phai-looking-over',
     titleLo: 'ໃກ້ຂ້ອຍ',
     title: 'Close to you',
-    body: 'Turn on location to sort places by distance and get directions. We only keep it when you check in.',
+    body: 'Turn on location to sort places by distance and get directions. It stays on your phone, and only reaches us when you check in or ask for directions.',
   },
   {
     key: 'flame',
     phai: 'phai-idle',
     titleLo: 'ເຊັກອິນ',
-    title: 'Check in, keep your flame lit',
-    body: 'Out somewhere? Check in to earn embers and watch Phai grow. Sign in with Google from the You tab whenever you like.',
+    title: 'Check in, level up',
+    body: 'At a place? Check in. A new place earns 25 embers, embers raise your level, and there are badges and a new challenge every month. You have to really be there. Sign in with Google from the You tab whenever you like.',
+  },
+  // Nov 2026: what a person should know before they hand over location and
+  // a Google account, and the one place the terms and privacy policy are
+  // agreed to. Points match legal/privacy.html; change both together.
+  // TODO(lao): ຂໍ້ມູນຂອງເຈົ້າ ("your data")
+  {
+    key: 'privacy',
+    phai: 'phai-looking-over',
+    chip: 'Private by default',
+    titleLo: 'ຂໍ້ມູນຂອງເຈົ້າ',
+    title: 'Your data stays yours',
+    points: [
+      'Browsing needs no account.',
+      'Your check-ins, ratings and rankings are only visible to you. Places show counts, never names.',
+      'Signing in keeps your Google ID and a username. No email, no contacts.',
+    ],
   },
 ];
 
@@ -4548,6 +5412,12 @@ function welcomeOpenLine() {
   return live.length ? `<div class="mi-live mi-live-quiet">Hours for all ${live.length} places</div>` : '';
 }
 
+// "Terms of Use and Privacy Policy", each opening its page in a new tab
+// (legal/*.html, shipped with the website and the app's copy of it)
+function legalLinks() {
+  return `<a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>`;
+}
+
 function welcomeSlideHtml(s, i) {
   const photo = welcomePhoto(s);
   const art = photo
@@ -4557,17 +5427,19 @@ function welcomeSlideHtml(s, i) {
          <span class="mi-glow"></span>
          ${[0, 1, 2, 3, 4, 5].map(n => `<span class="mi-ember mi-ember-${n}"></span>`).join('')}
          <img class="mi-phai-big" src="assets/mascot/${s.phai}.svg" alt="" width="200" height="240" draggable="false">
-         <span class="mi-chip">+25 embers · first visit</span>
+         <span class="mi-chip${s.chip ? ' mi-chip-quiet' : ''}">${esc(s.chip || '+25 embers · first visit')}</span>
        </div>`;
   const extra = s.key === 'open' ? welcomeOpenLine()
     : s.key === 'near' ? '<div class="mi-loc" data-mi-loc aria-live="polite"></div>'
+    : s.key === 'privacy' ? `<p class="mi-agree">By using Paisaidee you agree to the ${legalLinks()}.</p>`
     : '';
   return `<div class="mi-slide mi-slide-${s.key}" data-mi-index="${i}">
     <div class="mi-art">${art}</div>
     <div class="mi-copy">
       <div class="mi-title lao">${esc(s.titleLo)}</div>
       <div class="mi-title-en">${esc(s.title)}</div>
-      <p class="mi-sub">${esc(s.body)}</p>
+      ${s.body ? `<p class="mi-sub">${esc(s.body)}</p>` : ''}
+      ${s.points ? `<ul class="mi-points">${s.points.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${extra}
     </div>
   </div>`;
@@ -4636,7 +5508,7 @@ function shouldShowMoodIntro(me) {
 // else (see functions/api/mood-intro-seen.js).
 function markMoodIntroSeen() {
   try { localStorage.setItem(MOOD_INTRO_KEY, '1'); } catch (e) {}
-  fetch('/api/mood-intro-seen', { method: 'POST' }).catch(() => {});
+  apiFetch('/api/mood-intro-seen', { method: 'POST' }).catch(() => {});
 }
 
 // fire-and-forget log of one mood-chooser tap (migrations/015_mood_picks.sql,
@@ -4645,7 +5517,7 @@ function markMoodIntroSeen() {
 // results: a failed log must not delay the thing the person actually
 // tapped for.
 function logMoodPick(tag) {
-  fetch('/api/mood-pick', {
+  apiFetch('/api/mood-pick', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tag }),
@@ -5378,27 +6250,31 @@ function heroVariant(h) {
 
    The hero image is picked from HOME_HERO_IMAGES, once per app open. */
 function homeDiscoverHeaderHtml() {
-  const { photo, veil } = heroVariant(HOME_HERO);
-  const when = isNight() ? 'tonight' : 'today';
+  // Nov 2026 redesign: the photo hero took nearly half the screen before
+  // any place showed. Now a slim brand row (weather on the right), the
+  // question in Lao with English under it, then a flat search bar that
+  // sticks to the top when you scroll (.home-search-bar), then the category
+  // row. HOME_HERO / heroVariant() are unused here now; kept so the photo
+  // header can come back without digging through history.
+  const night = isNight();
   return `
-    <section class="home-hero" aria-label="Paisaidee"${typeof veil === 'number' ? ` style="--hero-veil:${veil}"` : ''}>
-      ${photo ? `<img class="home-hero-img" src="${esc(cloudinaryUrl(photo, 900))}" alt=""
-        style="object-position:${HOME_HERO.objectPosition}" fetchpriority="high">` : ''}
-      <div class="home-hero-scrim"></div>
-      <div class="home-hero-text">
-        <div class="home-hero-brand">${logoMark(18, '#131019')}<span>PAISAIDEE</span></div>
-        <div class="home-hero-lo lao">ໄປໃສດີ</div>
-        <div class="home-hero-en">Where should we go ${when}?</div>
-      </div>
-    </section>
-    <label class="home-search" role="search">
-      <span class="home-search-ico">${icoSearch(18)}</span>
-      <input id="homeSearch" type="search" autocomplete="off" enterkeyhint="search"
-        placeholder="Search places &amp; events" aria-label="Search places and events">
-    </label>
+    <div class="s-subrow home-top">
+      <div class="home-top-brand">${logoMark(16, 'var(--ink)')}<span>PAISAIDEE</span></div>
+      ${weatherWidgetHtml()}
+    </div>
+    <h1 class="home-q"><span class="home-q-lo lao">${night ? 'ຄືນນີ້' : 'ມື້ນີ້'}ໄປໃສດີ?</span>
+      <span class="home-q-en">Where should we go ${night ? 'tonight' : 'today'}?</span></h1>
+    <div id="homeSearchSentinel"></div>
+    <div class="home-search-bar">
+      <label class="home-search" role="search">
+        <span class="home-search-ico">${icoSearch(18)}</span>
+        <input id="homeSearch" type="search" autocomplete="off" enterkeyhint="search"
+          placeholder="Search places &amp; events" aria-label="Search places and events">
+      </label>
+    </div>
     <div id="homeBody">
       ${homeCategoriesHtml()}
-      <div class="s-subrow home-weather">${weatherWidgetHtml()}</div>`;
+      ${featureBannerHtml()}`;
 }
 
 /* The Bars / Cafes / Events hero. Same <section class="home-hero"> as
@@ -5418,24 +6294,17 @@ function homeDiscoverHeaderHtml() {
 function typeHeroHeaderHtml(f) {
   const entry = TYPE_HERO[f];
   if (!entry) return '';
-  const { photo, veil } = heroVariant(entry);
-  // 'event' is not a venue type, so it has no VENUE_TYPE_META row — this is
-  // the same pair of sources homeCategoriesHtml() reads for its labels, and
-  // deliberately the same, so the Lao on the chip, the category button and
-  // the hero can never drift apart.
+  // Nov 2026: the slim header, same as All's (homeDiscoverHeaderHtml()),
+  // with the type as the title. The photo heroes (TYPE_HERO) are unused for
+  // now and kept so they can come back.
   const lo = f === 'event' ? 'ອີເວັນ' : VENUE_TYPE_META[f]?.label_lo || '';
   const en = TYPE_HERO_EN[f] || '';
   return `
-    <section class="home-hero" aria-label="${esc(en)}"${typeof veil === 'number' ? ` style="--hero-veil:${veil}"` : ''}>
-      ${photo ? `<img class="home-hero-img" src="${esc(cloudinaryUrl(photo, 900))}" alt=""
-        style="object-position:${entry.objectPosition}" fetchpriority="high">` : ''}
-      <div class="home-hero-scrim"></div>
-      <div class="home-hero-text">
-        <div class="home-hero-brand">${logoMark(18, '#131019')}<span>PAISAIDEE</span></div>
-        <div class="home-hero-lo lao">${esc(lo)}</div>
-        <div class="home-hero-en">${esc(en)}</div>
-      </div>
-    </section>`;
+    <div class="s-subrow home-top">
+      <div class="home-top-brand">${logoMark(16, 'var(--ink)')}<span>PAISAIDEE</span></div>
+    </div>
+    <h1 class="home-q"><span class="home-q-lo lao">${esc(lo)}</span>
+      <span class="home-q-en">${esc(en)}</span></h1>`;
 }
 
 // round category buttons, one per filter the chip row offers — Bars, Cafes,
@@ -5474,6 +6343,11 @@ const CAT_ICONS = {
     <path d="M7 14a3 3 0 0 1 3-3h28a3 3 0 0 1 3 3v5a5 5 0 0 0 0 10v5a3 3 0 0 1-3 3H10a3 3 0 0 1-3-3v-5a5 5 0 0 0 0-10z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
     <path d="M30 13v22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="2.5 3" stroke-linecap="round"/>
     <path class="ci-acc" d="m19 16.5 2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z"/>`,
+  // two mountains and a sun: "go somewhere else in Laos"
+  province: `
+    <circle class="ci-acc" cx="34" cy="13" r="5"/>
+    <path d="M4 39 17.5 18l8 12 5.5-7.5L44 39z" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M13.5 24.5 17.5 28l3.5-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
   wheel: `
     <path class="ci-acc" d="M24 25V9.5A15.5 15.5 0 0 1 39.5 25zM24 25v15.5A15.5 15.5 0 0 1 8.5 25z"/>
     <circle cx="24" cy="25" r="15.5" fill="none" stroke="currentColor" stroke-width="2.6"/>
@@ -5483,11 +6357,9 @@ const CAT_ICONS = {
 };
 
 // one rounded tile per filter the chip row offers (Bars, Cafes, Events,
-// Restaurants once any exist), then the wheel. The wheel tile spins every
-// open bar, café and restaurant (see wheelCandidates('all')) — it is also
-// the only way into the wheel from the All tab and on desktop, where the
-// type-list Spin button is hidden.
-// TODO(lao): 'ສຸ່ມເລືອກ' for the wheel tile.
+// Restaurants once any exist). The wheel used to be a fifth tile here, but
+// in a row of categories it read as a prize game, not a way to choose a
+// place; it lives in decideCardHtml() on Home and on each type tab now.
 function homeCategoriesHtml() {
   const keys = FILTER_ORDER.filter(k => k !== 'all' && !chipBarEl.querySelector(`.chip[data-filter="${k}"]`)?.hidden);
   const label = k => k === 'event'
@@ -5500,7 +6372,419 @@ function homeCategoriesHtml() {
   return `<div class="home-cats">${keys.map(k => {
     const l = label(k);
     return tile(`data-cat="${k}"`, CAT_ICONS[k] || CAT_ICONS.event, l.lo, l.en);
-  }).join('')}${tile('data-wheel aria-label="Spin the wheel"', CAT_ICONS.wheel, 'ສຸ່ມເລືອກ', 'Spin')}</div>`;
+  }).join('')}${tile('data-provinces', CAT_ICONS.province, 'ແຂວງ', 'Provinces')}</div>`;
+}
+
+/* "Can't decide?" — the wheel's way in from Home (and the only one on
+   desktop, where the type tabs' Spin button is hidden). Worded as help
+   choosing where to go, with the number of places it will choose from, so
+   it can't be mistaken for a spin-to-win. Hidden when fewer than two places
+   are open: a wheel with one slice isn't a choice. TODO(lao):
+   'ເລືອກບໍ່ຖືກບໍ?' and 'ໃຫ້ໄຟເລືອກ'. */
+function decideCardHtml() {
+  const n = wheelCandidates('all').length;
+  if (n < 2) return '';
+  return `<div class="decide-card">
+    <img class="decide-phai" src="assets/mascot/phai-wink.svg" alt="" width="64" height="77" draggable="false">
+    <div class="decide-body">
+      <div class="decide-lo lao">ເລືອກບໍ່ຖືກບໍ?</div>
+      <div class="decide-en">Can't decide?</div>
+      <div class="decide-sub">Phai picks one of the ${n} places open right now.</div>
+    </div>
+    <button type="button" class="decide-go" data-wheel>
+      ${icoSurprise(18)}<span>Let Phai pick</span>
+    </button>
+  </div>`;
+}
+
+/* ---------- Top lists ----------
+   "Which bars are good?" answered up front, per type. The order comes from
+   real check-ins once a place has enough of them — DIFFERENT people in the
+   last 30 days (/api/venues people_30d), so one regular can't carry a venue
+   — and until then from Kar's own picks (data/picks.json "top"). Each row
+   says which it is ("12 people this month" / "our pick"), so a pick is
+   never presented as a count. No Google or other borrowed numbers (see
+   migrations/017_why_rating.sql). A type with neither has no list at all. */
+const TOP_MIN_PEOPLE = 3;
+const TOP_SIZE = 5;
+const TOP_TYPES = ['bar', 'cafe', 'restaurant'];
+
+function topListFor(type) {
+  const live = state.venues.filter(v => v.type === type && v.pin_status !== 'pending');
+  const counted = live.filter(v => (v.people_30d || 0) >= TOP_MIN_PEOPLE)
+    .sort((a, b) => b.people_30d - a.people_30d);
+  const seen = new Set(counted.map(v => v.id));
+  const picks = (state.picks?.top?.[type] || []).map(venueById)
+    .filter(v => v && v.type === type && v.pin_status !== 'pending' && !seen.has(v.id));
+  return [...counted.map(v => ({ v, by: 'visits' })), ...picks.map(v => ({ v, by: 'pick' }))]
+    .slice(0, TOP_SIZE);
+}
+
+function topRowHtml({ v, by }, i) {
+  const st = openStatus(v);
+  const d = distanceTo(v);
+  const thumb = v.photos?.length
+    ? `<img src="${esc(cloudinaryUrl(v.photos[0], 160))}" alt="" loading="lazy">`
+    : `<img src="${venueTileUri(v.short_name || v.name, v.type, false)}" alt="" loading="lazy">`;
+  const why = by === 'visits'
+    ? `${plural(v.people_30d, 'person', 'people')} this month`
+    : 'our pick';
+  return `<button type="button" class="top-row${st.open ? '' : ' closed'}" data-open-venue="${esc(v.id)}">
+    <span class="top-rank">${i + 1}</span>
+    <span class="top-thumb">${thumb}</span>
+    <span class="top-body">
+      <span class="top-name">${esc(v.short_name || v.name)}${state.myCounts?.[v.id] ? '<span class="top-been">been</span>' : ''}</span>
+      <span class="top-why${by === 'visits' ? ' counted' : ''}">${why}</span>
+      <span class="top-hours${st.open ? ' open' : ''}">${esc(st.label)}${d != null ? ` · ${fmtDist(d)}` : ''}</span>
+    </span>
+  </button>`;
+}
+
+function topNoteHtml(lists) {
+  const anyCounted = lists.some(l => l.some(x => x.by === 'visits'));
+  // "You've been to 2 of 5" — a list you can tick off (signed in only)
+  const all = lists.flat();
+  const been = state.myCounts ? all.filter(x => state.myCounts[x.v.id]).length : null;
+  const tally = been !== null && all.length
+    ? `<div class="top-tally">You've been to <b>${been}</b> of ${all.length}</div>` : '';
+  return tally + `<div class="top-note">${anyCounted
+    ? 'Ranked by how many people checked in this month, then our picks.'
+    : 'Our picks for now. As people check in, real visits take over the order.'}</div>`;
+}
+
+// Home (All): one list at a time, with a switch between the types that
+// have one. TODO(lao): 'ອັນດັບ' (and the type tabs' 'ອັນດັບ' + type).
+function homeTopListsHtml(secH) {
+  const types = TOP_TYPES.filter(t => topListFor(t).length);
+  if (!types.length) return '';
+  const cur = types.includes(state.topType) ? state.topType : types[0];
+  const list = topListFor(cur);
+  const seg = types.length > 1
+    ? `<div class="seg top-seg" role="tablist">${types.map(t => `
+        <button class="seg-btn ${t === cur ? 'on' : ''}" data-top-type="${t}" role="tab" aria-selected="${t === cur}">${esc(VENUE_TYPE_META[t].label)}</button>`).join('')}
+      </div>`
+    : '';
+  return secH('Top lists · ອັນດັບ') + seg +
+    `<div class="top-list">${list.map(topRowHtml).join('')}</div>` + topNoteHtml([list]);
+}
+
+// a type tab (Bars, Cafés…): its own list above the full one
+function typeTopListHtml(type, secH) {
+  const list = topListFor(type);
+  if (!list.length) return '';
+  const meta = VENUE_TYPE_META[type];
+  return secH(`Top ${meta.label.toLowerCase()} · ອັນດັບ${meta.label_lo}`) +
+    `<div class="top-list">${list.map(topRowHtml).join('')}</div>` + topNoteHtml([list]);
+}
+
+/* ---------- Themed lists (Home "Lists" row, openThemeList()) ----------
+   "Where's a rooftop?" "Where's live music tonight?" — the questions people
+   actually ask, answered as short lists. Two kinds:
+     - Kar's: data/picks.json "themes", each a title and venue ids, edited
+       by hand. Seeded only with venues whose OWN description says it
+       (rooftop, live music) — never guessed from a name or a photo.
+     - worked out from real data: open past 1 am (today's hours), by the
+       river (the same RIVERSIDE list the badge uses), settle-in cafés (the
+       vibe tags).
+   A list with fewer than 2 places isn't shown. TODO(lao): the list titles. */
+const COMPUTED_THEMES = [
+  { id: 'late', title: 'Open till 1 am or later', title_lo: 'ເປີດຮອດຕີໜຶ່ງ',
+    venues: () => state.venues.filter(v => v.hours && (parseHours(v.hours[DAYS[new Date().getDay()]])?.close ?? 0) >= 1500) },
+  { id: 'river', title: 'By the river', title_lo: 'ແຄມຂອງ',
+    venues: () => RIVERSIDE.map(venueById).filter(Boolean) },
+  { id: 'settle-in', title: 'Cafés to settle into', title_lo: 'ຄາເຟນັ່ງດົນໆ',
+    venues: () => state.venues.filter(v => v.type === 'cafe' && (v.vibe || []).some(t => t === 'settle-in' || t === 'for-coffee')) },
+];
+
+function allThemes() {
+  const kar = (state.picks?.themes || []).map(t => ({
+    id: t.id, title: t.title, title_lo: t.title_lo,
+    venues: () => (t.venue_ids || []).map(venueById).filter(Boolean),
+  }));
+  return [...kar, ...COMPUTED_THEMES]
+    .map(t => ({ ...t, list: t.venues().filter(v => v.pin_status !== 'pending') }))
+    .filter(t => t.list.length >= 2);
+}
+
+function themeCardHtml(t) {
+  const pics = t.list.slice(0, 3).map(v => v.photos?.length
+    ? cloudinaryUrl(v.photos[0], 240) : venueTileUri(v.short_name || v.name, v.type, false));
+  const been = state.myCounts ? t.list.filter(v => state.myCounts[v.id]).length : null;
+  return `<button type="button" class="theme-card" data-theme-list="${esc(t.id)}">
+    <span class="theme-pics">${pics.map(p => `<img src="${esc(p)}" alt="" loading="lazy">`).join('')}</span>
+    <span class="theme-title">${esc(t.title)}</span>
+    <span class="theme-sub"><span class="lao">${esc(t.title_lo || '')}</span> · ${plural(t.list.length, 'place', 'places')}${been ? ` · been to ${been}` : ''}</span>
+  </button>`;
+}
+
+function homeThemesHtml(secH) {
+  const themes = allThemes();
+  if (!themes.length) return '';
+  return secH('Lists · ລາຍການ') + `<div class="theme-rail">${themes.map(themeCardHtml).join('')}</div>`;
+}
+
+function openThemeList(id) {
+  const t = allThemes().find(x => x.id === id);
+  if (!t) return;
+  const list = sortForDisplay(t.list);
+  const been = state.myCounts ? list.filter(v => state.myCounts[v.id]).length : null;
+  setSheetView({ type: 'theme', venueId: null });
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title lao">${esc(t.title_lo || t.title)}</div><div class="pg-title-en">${esc(t.title)}</div></div>
+    </div>
+    ${been !== null ? `<div class="top-tally" style="margin:0 0 12px;">You've been to <b>${been}</b> of ${list.length}</div>` : ''}
+    ${list.map(v => isMobile() ? rowCard(v) : plainListCardHtml(v)).join('')}
+    <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', () => {
+    state.filter = 'all';
+    renderHomeSheet();
+  }));
+}
+
+/* ---------- Featured banner (top of Home, under the category row) ----------
+   One wide swipeable banner, 3–6 slides, moving on by itself every 6s
+   (never with reduced motion, and never while someone is touching it).
+   Two kinds of slide:
+     - picks.json "featured": places Kar chooses to feature, first in line.
+       Each is { "venue": "<id>", "line": "...", "line_lo": "...",
+       "photo": "<cloudinary id, optional>" }. Empty for now.
+     - the app's own slides (below): the map, your flame, this month's
+       challenge, the wheel, badges, Top lists. These teach people what the
+       app does, need no venue photos, and use real data where they can
+       (your challenge progress, how many places are open).
+   Wording rule: nothing here is a prize. Embers and badges are "collect" /
+   "unlock", never "win". A paid feature would have to say "Sponsored".
+   The art is placeholder (Phai) until the new mascot exists.
+   TODO(lao): every Lao line on these slides. */
+const FEAT_ICON_FLAG = `<svg viewBox="0 0 48 48" width="64" height="64" aria-hidden="true">
+  <path d="M12 42V7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M12 8h24l-5 8 5 8H12z" fill="var(--flame)" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg>`;
+
+function featureSlides() {
+  const me = state.me && !state.me.signed_out ? state.me : null;
+  const slides = [];
+  for (const f of state.picks?.featured || []) {
+    const v = venueById(f.venue);
+    if (!v || v.pin_status === 'pending') continue;
+    const photo = f.photo || v.photos?.[0];
+    if (!photo) continue;
+    slides.push({ kind: 'photo', act: 'venue:' + v.id, photo: cloudinaryUrl(photo, 900),
+      eyebrow: 'Featured', title: v.short_name || v.name, lo: f.line_lo || '', sub: f.line || '' });
+  }
+  const live = state.venues.filter(v => v.pin_status !== 'pending').length;
+  const { photo } = heroVariant(HOME_HERO);
+  slides.push({ kind: 'photo', act: 'map', photo: photo ? cloudinaryUrl(photo, 900) : '',
+    eyebrow: 'Vientiane', title: `${live} places on one map`, lo: 'ເບິ່ງແຜນທີ່', cta: 'Open the map' });
+  slides.push({ kind: 'art', tone: 'flame', act: 'you', art: `<img src="assets/mascot/phai-delighted.svg" alt="" width="92" height="110" draggable="false">`,
+    title: 'Your flame grows every time you go out', lo: 'ໄຟຂອງເຈົ້າ',
+    cta: me ? 'See your flame' : 'Start your flame' });
+  const ch = me?.challenge;
+  slides.push({ kind: 'art', tone: 'gold', act: me ? 'progress' : 'you', art: FEAT_ICON_FLAG,
+    eyebrow: "This month's challenge", lo: 'ສິ່ງທ້າທາຍປະຈຳເດືອນ',
+    title: ch ? ch.title : 'A new challenge every month',
+    sub: ch ? (ch.done ? 'Done · +50 embers added' : `${ch.have} of ${ch.need} done · +${ch.embers} embers`) : 'Finish it for +50 embers',
+    progress: ch && !ch.done ? Math.min(1, ch.have / ch.need) : null });
+  const open = wheelCandidates('all').length;
+  if (open >= 2) slides.push({ kind: 'art', tone: 'ink', act: 'wheel',
+    art: `<svg viewBox="0 0 48 48" width="70" height="70" aria-hidden="true" class="feat-wheel">${CAT_ICONS.wheel}</svg>`,
+    title: "Can't decide? Let Phai pick", lo: 'ເລືອກບໍ່ຖືກບໍ?', sub: `One of the ${open} places open right now` });
+  slides.push({ kind: 'art', tone: 'gold', act: me ? 'progress' : 'you',
+    art: `<span class="feat-badges">${['night-owl', 'bar-hopper', 'sunset'].map(id => `<span>${badgeIcon({ id }, 26)}</span>`).join('')}</span>`,
+    title: '13 badges to unlock', lo: 'ສະສົມຫຼຽນ', sub: 'Night Owl, Bar Hopper, Sunset…' });
+  slides.push({ kind: 'art', tone: 'ink', act: 'top',
+    art: `<span class="feat-rank"><b>1</b><b>2</b><b>3</b></span>`,
+    title: 'Where Vientiane went this month', lo: 'ອັນດັບ', sub: 'Top bars and cafés, by real check-ins' });
+  return slides;
+}
+
+function featureBannerHtml() {
+  const slides = featureSlides();
+  if (!slides.length) return '';
+  const slide = (x, i) => {
+    const text = `<span class="feat-text">
+        ${x.eyebrow ? `<span class="feat-eyebrow">${esc(x.eyebrow)}</span>` : ''}
+        ${x.lo ? `<span class="feat-lo lao">${esc(x.lo)}</span>` : ''}
+        <span class="feat-title">${esc(x.title)}</span>
+        ${x.sub ? `<span class="feat-sub">${esc(x.sub)}</span>` : ''}
+        ${x.progress != null ? `<span class="feat-bar"><i style="width:${Math.round(x.progress * 100)}%"></i></span>` : ''}
+        ${x.cta ? `<span class="feat-cta">${esc(x.cta)} ›</span>` : ''}
+      </span>`;
+    return x.kind === 'photo'
+      ? `<button type="button" class="feat-slide feat-photo" data-feat="${esc(x.act)}" aria-label="${esc(x.title)}">
+          ${x.photo ? `<img src="${esc(x.photo)}" alt="" draggable="false"${i ? ' loading="lazy"' : ''}>` : ''}<span class="feat-scrim"></span>${text}</button>`
+      : `<button type="button" class="feat-slide feat-${x.tone}" data-feat="${esc(x.act)}" aria-label="${esc(x.title)}">
+          ${text}<span class="feat-art">${x.art}</span></button>`;
+  };
+  return `<div class="feat" aria-roledescription="carousel" aria-label="Featured">
+    <div class="feat-rail">${slides.map(slide).join('')}</div>
+    <div class="feat-dots" aria-hidden="true">${slides.map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>
+  </div>`;
+}
+
+let featTimer = null;
+function initFeatureBanner(root) {
+  clearInterval(featTimer); featTimer = null;
+  const rail = root.querySelector('.feat-rail');
+  if (!rail) return;
+  const dots = [...root.querySelectorAll('.feat-dots i')];
+  const n = rail.children.length;
+  const current = () => Math.round(rail.scrollLeft / (rail.children[0]?.offsetWidth + 10 || 1));
+  let raf = 0;
+  rail.addEventListener('scroll', () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { const c = current(); dots.forEach((d, i) => d.classList.toggle('on', i === c)); });
+  }, { passive: true });
+  let pausedUntil = 0;
+  const pause = () => { pausedUntil = Date.now() + 10000; };
+  rail.addEventListener('pointerdown', pause, { passive: true });
+  rail.addEventListener('touchstart', pause, { passive: true });
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches && n > 1) {
+    featTimer = setInterval(() => {
+      if (!rail.isConnected) { clearInterval(featTimer); return; }
+      if (document.hidden || Date.now() < pausedUntil) return;
+      const r = rail.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) return;           // scrolled out of view
+      const next = (current() + 1) % n;
+      rail.scrollTo({ left: rail.children[next].offsetLeft - rail.children[0].offsetLeft, behavior: 'smooth' });
+    }, 6000);
+  }
+  rail.querySelectorAll('[data-feat]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.feat;
+    if (a.startsWith('venue:')) return openVenue(a.slice(6));
+    if (a === 'map') return document.querySelector('#bottomNav [data-nav="map"]')?.click();
+    if (a === 'you') return openFlameSheet();
+    if (a === 'progress') return state.me ? openProgressSheet(state.me) : openFlameSheet();
+    if (a === 'wheel') return openWheel({ filter: 'all' });
+    if (a === 'top') {
+      const t = document.querySelector('#sheetInner .top-list');
+      const sh = document.getElementById('sheet');
+      if (t && sh) sh.scrollTo({ top: sh.scrollTop + t.getBoundingClientRect().top - 180, behavior: 'smooth' });
+    }
+  }));
+}
+
+/* ---------- Provinces ----------
+   The start of "places worth visiting in every province". All 18, by
+   region; Vientiane Capital is what the app covers today, the rest say
+   soon. Nothing is listed for a province until its places are real and
+   sourced (CLAUDE.md data rules), so this page has no made-up content.
+   TODO(lao): Kar to check every Lao name. */
+const PROVINCES = [
+  { region: 'north', en: 'Phongsaly',          lo: 'ຜົ້ງສາລີ' },
+  { region: 'north', en: 'Luang Namtha',       lo: 'ຫຼວງນ້ຳທາ' },
+  { region: 'north', en: 'Oudomxay',           lo: 'ອຸດົມໄຊ' },
+  { region: 'north', en: 'Bokeo',              lo: 'ບໍ່ແກ້ວ' },
+  { region: 'north', en: 'Luang Prabang',      lo: 'ຫຼວງພະບາງ' },
+  { region: 'north', en: 'Houaphanh',          lo: 'ຫົວພັນ' },
+  { region: 'north', en: 'Xayaboury',          lo: 'ໄຊຍະບູລີ' },
+  { region: 'north', en: 'Xieng Khouang',      lo: 'ຊຽງຂວາງ' },
+  { region: 'central', en: 'Vientiane Capital', lo: 'ນະຄອນຫຼວງວຽງຈັນ', live: true },
+  { region: 'central', en: 'Vientiane Province', lo: 'ແຂວງວຽງຈັນ' },
+  { region: 'central', en: 'Xaisomboun',       lo: 'ໄຊສົມບູນ' },
+  { region: 'central', en: 'Bolikhamxay',      lo: 'ບໍລິຄຳໄຊ' },
+  { region: 'central', en: 'Khammouane',       lo: 'ຄຳມ່ວນ' },
+  { region: 'central', en: 'Savannakhet',      lo: 'ສະຫວັນນະເຂດ' },
+  { region: 'south', en: 'Salavan',            lo: 'ສາລະວັນ' },
+  { region: 'south', en: 'Sekong',             lo: 'ເຊກອງ' },
+  { region: 'south', en: 'Champasak',          lo: 'ຈຳປາສັກ' },
+  { region: 'south', en: 'Attapeu',            lo: 'ອັດຕະປື' },
+];
+const REGIONS = [
+  { id: 'central', en: 'Central', lo: 'ພາກກາງ' },
+  { id: 'north', en: 'North', lo: 'ພາກເໜືອ' },
+  { id: 'south', en: 'South', lo: 'ພາກໃຕ້' },
+];
+
+function openProvinces() {
+  setSheetView({ type: 'provinces', venueId: null });
+  const live = state.venues.filter(v => v.pin_status !== 'pending').length;
+  const card = p => p.live
+    ? `<button type="button" class="prov-card live" data-prov-live>
+        <span class="prov-lo lao">${esc(p.lo)}</span><span class="prov-en">${esc(p.en)}</span>
+        <span class="prov-status">${live} places</span></button>`
+    : `<div class="prov-card" aria-disabled="true">
+        <span class="prov-lo lao">${esc(p.lo)}</span><span class="prov-en">${esc(p.en)}</span>
+        <span class="prov-status"><span class="lao">ໄວໆນີ້</span> · soon</span></div>`;
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title lao">ແຂວງ</div><div class="pg-title-en">Provinces</div></div>
+    </div>
+    <p class="prov-intro">Places worth going to in every province, picked by us. Vientiane Capital is here now, more provinces are on the way.</p>
+    ${REGIONS.map(r => `
+      <div class="prov-region"><span class="lao">${esc(r.lo)}</span> · ${esc(r.en)}</div>
+      <div class="prov-grid">${PROVINCES.filter(p => p.region === r.id).map(card).join('')}</div>`).join('')}
+    <div class="btn-row"><button class="btn btn-back" data-back style="flex:1;">Back</button></div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  const home = () => { state.filter = 'all'; renderHomeSheet(); };
+  document.querySelectorAll('#sheetInner [data-back], #sheetInner [data-prov-live]').forEach(b => b.addEventListener('click', home));
+}
+
+// a hairline under the search bar only while it's stuck to the top, the
+// same signal the pinned chip bar gives (observeChipPin())
+let searchPinObs = null;
+function observeSearchPin() {
+  searchPinObs?.disconnect();
+  const s = document.getElementById('homeSearchSentinel');
+  const bar = document.querySelector('#sheetInner .home-search-bar');
+  if (!s || !bar || !('IntersectionObserver' in window)) return;
+  searchPinObs = new IntersectionObserver(([e]) => bar.classList.toggle('pinned', !e.isIntersecting && e.boundingClientRect.top < 0),
+    { root: document.getElementById('sheet'), threshold: 0 });
+  searchPinObs.observe(s);
+}
+
+/* ---------- "When people go" (venue page) ----------
+   From /api/venue-stats: real check-ins over 90 days by weekday, in
+   Vientiane time. The server only sends numbers once a venue has enough
+   check-ins from enough different people; otherwise nothing is drawn (no
+   "not enough data" box). */
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function busyPeakHours(byHour) {
+  // the busiest three-hour stretch, which reads better than one hour
+  let best = 0, at = 0;
+  for (let h = 0; h < 24; h++) {
+    const sum = byHour[h] + byHour[(h + 1) % 24] + byHour[(h + 2) % 24];
+    if (sum > best) { best = sum; at = h; }
+  }
+  return best ? `${fmtTime(at * 60)}–${fmtTime(((at + 3) % 24) * 60)}` : '';
+}
+
+function venueBusyHtml(stats) {
+  if (!stats?.enough || !Array.isArray(stats.by_day)) return '';
+  const max = Math.max(...stats.by_day, 1);
+  const today = (new Date().getDay() + 6) % 7;
+  const top = Math.max(...stats.by_day);
+  const busiest = DAY_SHORT.filter((_, i) => stats.by_day[i] === top);
+  const hours = busyPeakHours(stats.by_hour || []);
+  return `<div class="busy-card">
+    <div class="busy-h">When people go <span>· last 3 months</span></div>
+    <div class="busy-bars" role="img" aria-label="Busiest on ${busiest.join(' and ')}">
+      ${stats.by_day.map((n, i) => `<div class="busy-col${i === today ? ' today' : ''}">
+        <span class="busy-track"><span class="busy-bar" style="height:${Math.max(6, Math.round(n / max * 100))}%"></span></span>
+        <span class="busy-day">${DAY_SHORT[i]}</span>
+      </div>`).join('')}
+    </div>
+    <div class="busy-sub">Busiest on ${busiest.join(' and ')}${hours ? `, mostly ${hours}` : ''} · check-ins by ${plural(stats.people, 'person', 'people')}</div>
+  </div>`;
+}
+
+async function loadVenueBusy(v) {
+  const box = document.getElementById('vdBusy');
+  if (!box) return;
+  try {
+    const r = await apiFetch(`/api/venue-stats?id=${encodeURIComponent(v.id)}`);
+    if (!r.ok) return;
+    const stats = await r.json();
+    // still on the same venue?
+    if (state.sheetView?.type !== 'venue' || state.sheetView.venueId !== v.id) return;
+    box.innerHTML = venueBusyHtml(stats);
+  } catch (e) { /* no chart is the right answer when there's no data */ }
 }
 
 /* ---------- Saved places ----------
@@ -5733,6 +7017,8 @@ const ON_FIRE_CAROUSEL = true;
 const ALL_LIST_SKIPS_SHOWN = false;
 
 function renderHomeSheet() {
+  // the map's places-in-view row follows the same filter
+  requestAnimationFrame(updateMapPeek);
   state.selectedId = null; if (state.map) updateSelection();
   setSheetView({ type: 'home', venueId: null });
   setMobileScreen('home');
@@ -5838,13 +7124,14 @@ function renderHomeSheet() {
       ${wheelButtonHtml(f)}
       <div id="chipSentinel"></div>
       <div id="chipSlot"></div>`;
+    html += typeTopListHtml(f, secH);
     html += secH(label);
 
     const cafeTab = state.cafeTab || 'recommended';
     if (f === 'cafe') {
       html += `
         <div class="seg" role="tablist">
-          <button class="seg-btn ${cafeTab === 'recommended' ? 'on' : ''}" data-cafe-tab="recommended" role="tab" aria-selected="${cafeTab === 'recommended'}">Recommended</button>
+          <button class="seg-btn ${cafeTab === 'recommended' ? 'on' : ''}" data-cafe-tab="recommended" role="tab" aria-selected="${cafeTab === 'recommended'}">Photos</button>
           <button class="seg-btn ${cafeTab === 'all' ? 'on' : ''}" data-cafe-tab="all" role="tab" aria-selected="${cafeTab === 'all'}">All cafés</button>
         </div>`;
     }
@@ -5922,7 +7209,7 @@ function renderHomeSheet() {
       const tonightPhoto = ev.photo || ((v.photos && v.photos.length) ? v.photos[0] : null);
       const media = tonightPhoto
         ? `<img class="big-thumb" src="${esc(cloudinaryUrl(tonightPhoto, 900))}" alt="" loading="lazy">`
-        : `<img class="big-thumb" src="${venueTileUri(v.short_name || v.name, 'venue', true)}" alt="" loading="lazy">`;
+        : `<img class="big-thumb" src="${venueTileUri(v.short_name || v.name, v.type, true)}" alt="" loading="lazy">`;
       // status+distance is already folded into this sub-line via venueLine()
       // (falls back to the area name with no location) — every card here
       // already had it before Pass 2, nothing to add. This card previously
@@ -5971,9 +7258,18 @@ function renderHomeSheet() {
     rendered = true;
     const railed = mobile && ON_FIRE_CAROUSEL;
     const fireCards = pickVenuesQ.map(v => railed ? railCardHtml(v) : bigCard(v, venueLine(v, esc(v.area || '')))).join('');
-    html += secH('On fire · ໄຟລຸກ', esc(state.picks?.note_en)) +
+    // was 'On fire · ໄຟລຸກ'; renamed ແນະນຳ (recommended) on 13 Nov 2026 at Kar's call
+    html += secH('Recommended · ແນະນຳ', esc(state.picks?.note_en)) +
       (railed ? `<div class="fire-rail">${fireCards}</div>` : fireCards) +
       `<div style="font-size:10.5px;color:var(--secondary);margin-top:8px;">picked by us, not ranked by check-ins</div>`;
+  }
+
+  if (f === 'all' && !state.homeQuery) {
+    const top = homeTopListsHtml(secH);
+    if (top) { rendered = true; html += top; }
+    const themes = homeThemesHtml(secH);
+    if (themes) { rendered = true; html += themes; }
+    html += decideCardHtml();
   }
 
   /* What's happening — the mockup's second section, on All only: the
@@ -6068,8 +7364,14 @@ function renderHomeSheet() {
   const lateQ = sortForDisplay(late);
   if (showVenueSections && lateQ.length) {
     rendered = true;
-    html += secH('Open late · ເປີດເດິກ') +
-      sectionWrap(lateQ.map(v => mobile ? rowCard(v) : sectionCard(v, venueLine(v, openStatus(v).label))).join(''));
+    /* a swipe row on phones, like On fire: with 50+ venues this list grew
+       to a dozen-plus full-width cards and pushed All places a screen and a
+       half further down. Everything is still here, one swipe away. */
+    const railed = mobile && ON_FIRE_CAROUSEL;
+    html += secH('Open late · ເປີດເດິກ', railed ? plural(lateQ.length, 'place', 'places') : '') +
+      (railed
+        ? `<div class="fire-rail">${lateQ.map(v => railCardHtml(v)).join('')}</div>`
+        : sectionWrap(lateQ.map(v => mobile ? rowCard(v) : sectionCard(v, venueLine(v, openStatus(v).label))).join('')));
   }
 
   /* Every venue, beneath the editorial sections. All used to be ONLY those
@@ -6247,7 +7549,7 @@ function updateCheckinButton(v) {
 // the canonical deep link for a venue — the same ?v=<id> boot() reads back
 // (see deepLinkId there) and the same one functions/index.js rewrites the
 // og: tags for, so a link pasted into Messenger shows that venue's card.
-const venueShareUrl = (v) => `${location.origin}/?v=${encodeURIComponent(v.id)}`;
+const venueShareUrl = (v) => `${SITE_ORIGIN}/?v=${encodeURIComponent(v.id)}`;
 
 /* The invitation itself. Lao first, English second — CLAUDE.md: "Lao-first,
    English supports" — and a question, not a label, because the thing being
@@ -6342,6 +7644,8 @@ function openVenue(id) {
   if (typeof edBlocksLeave === 'function' && edBlocksLeave(() => openVenue(id))) return;
   const v = venueById(id);
   if (!v) return;
+  // the wheel's banner belongs to the venue it picked, nowhere else
+  if (state.wheelPick && state.wheelPick.id !== id) state.wheelPick = null;
   // the wheel floats over everything (document.body, like the lightbox), so
   // any route into a venue has to take it down — not just the result card's
   // own handler. A map pin is tappable with the wheel open on desktop.
@@ -6563,10 +7867,13 @@ function openVenue(id) {
       ? `<div class="vd-head vd-head-above">${logoHtml}<div class="vd-headtext">${titleHtml}${metaHtml}</div></div>${heroHtml}`
       : `${heroHtml}<div class="vd-head vd-head-overlap">${logoHtml}<div class="vd-headtext">${titleHtml}${metaHtml}</div></div>`;
 
+  const picked = state.wheelPick?.id === v.id;
   let html = `
     <span data-venue-detail hidden></span>
-    ${headHtml}
+    ${picked ? headHtml.replace('class="vd-hero', 'class="vd-hero vd-hero-picked') : headHtml}
+    ${pickBannerHtml(v)}
     ${ratingLineHtml(v, 'vd-rating')}
+    ${myReactionLineHtml(v)}
     ${vibes.length ? `<div class="vd-vibes">${vibes.map(t => `<span class="vd-vibe">${esc(t.label)}</span>`).join('')}</div>` : ''}
     ${actionsHtml}
     ${whyHtml}
@@ -6583,6 +7890,7 @@ function openVenue(id) {
 
   html += `
     <div class="vd-details">${detail.join('')}</div>
+    <div id="vdBusy"></div>
     ${v.verified ? '' : '<div class="hint">details unconfirmed — hours may differ</div>'}
     <div id="routeAttribution"></div>`;
 
@@ -6591,6 +7899,10 @@ function openVenue(id) {
   // still-rendering old content's scrollTop assignment gets overwritten
   const sheet = document.getElementById('sheet');
   if (sheet) sheet.scrollTop = 0;
+  loadVenueBusy(v);
+  bindPickBanner();
+  document.querySelectorAll('#sheetInner [data-rate-venue]').forEach(b =>
+    b.addEventListener('click', () => askHowWasIt(v.id, () => openVenue(v.id))));
   // mobile back-button support: a fresh open pushes a history entry so the
   // hardware/browser back button can pop it and close the venue (see the
   // popstate listener in boot()) — except on a deep link (?v=id) load, where
@@ -6744,7 +8056,7 @@ async function toggleRoute(v) {
       from_lat: state.userPos.lat, from_lng: state.userPos.lng,
       to_lat: v.lat, to_lng: v.lng, mode: 'driving-car',
     });
-    const data = await (await fetch('/api/route?' + p)).json();
+    const data = await (await apiFetch('/api/route?' + p)).json();
     if (state.selectedId !== v.id) {
       // sheet moved on while we waited. The element is usually detached by
       // now, but release the claim either way so nothing can be left frozen
@@ -6875,6 +8187,7 @@ function showRoute(geometry, venueId) {
   updateUserMarker();
   state.currentRouteGeometry = geometry;
   state.routeVenueId = venueId;   // makes the venue sticky — see goHome()
+  updateMapPeek();
   drawRouteLayers(geometry);
 
   // routes can run well outside the normal city fence — lift it while shown,
@@ -6999,6 +8312,7 @@ function showDataFailure() {
 function clearRoute() {
   state.currentRouteGeometry = null;
   state.routeVenueId = null;
+  requestAnimationFrame(updateMapPeek);
   state.routeLabel = null;
   state.map.setMaxBounds(MAP_BOUNDS.maxBounds);
   state.map.setMinZoom(MAP_BOUNDS.minZoom);
@@ -7020,7 +8334,7 @@ async function doCheckin(v) {
   const btn = document.getElementById('checkinBtn');
   if (btn) { btn.disabled = true; document.getElementById('checkinLabel').textContent = 'Checking in…'; }
   try {
-    const res = await fetch('/api/checkin', {
+    const res = await apiFetch('/api/checkin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ venue_id: v.id, lat: state.userPos.lat, lng: state.userPos.lng }),
@@ -7036,6 +8350,8 @@ async function doCheckin(v) {
       const toCounts = ids => Object.fromEntries(ids.map(id => [id, 1]));
       const itemsBefore = earnedItems(toCounts(beforeVisited)).map(it => it.id);
       data.new_items = earnedItems(toCounts(afterVisited)).filter(it => !itemsBefore.includes(it.id));
+      data.venue_id = v.id;
+      state.myCounts = { ...(state.myCounts || {}), [v.id]: (state.myCounts?.[v.id] || 0) + 1 };
       showCelebration(data);
     } else if (data.already) {
       document.getElementById('checkinLabel').textContent = 'Already checked in tonight';
@@ -7068,7 +8384,7 @@ function showCelebration(data) {
   ov.className = 'celebrate';
   ov.innerHTML = `
     <div class="cel-card">
-      <div class="cel-flame">🔥</div>
+      <img class="cel-flame cel-phai" src="assets/mascot/phai-delighted.svg" alt="" width="200" height="240" draggable="false">
       <div class="cel-title">Checked in!</div>
       <div class="cel-venue">${esc(data.venue)}</div>
       <div class="cel-embers"><span class="cel-num" data-target="${data.embers_earned}">0</span><span class="cel-unit">embers</span></div>
@@ -7085,6 +8401,7 @@ function showCelebration(data) {
           `<div class="cel-row cel-badge"><span>${esc(it.name)} unlocked</span><b>new</b></div>`
         ).join('') : ''}
       </div>
+      ${data.challenge_done ? `<div class="cel-challenge">Monthly challenge done · <b>+${data.challenge_done.embers}</b><span>${esc(data.challenge_done.title)}</span></div>` : ''}
       ${data.capped ? '<div class="cel-capped">daily ember cap reached — check-in still counted</div>' : ''}
       <button class="btn cel-done">Nice</button>
       <div class="cel-confetti" data-confetti-svg></div>
@@ -7115,7 +8432,9 @@ function showCelebration(data) {
     setTimeout(() => ov.remove(), 300);
     closeLightbox();
     if (state.map) clearRoute();
-    openFlameSheet();
+    // "How was it?" while it's fresh — unless it's already been rated
+    if (data.venue_id && !state.myReactions?.[data.venue_id]) askHowWasIt(data.venue_id, openFlameSheet);
+    else openFlameSheet();
   });
 }
 
@@ -7191,6 +8510,7 @@ function initSheetDrag() {
   // else on the sheet.
   const canSwipeX = e => !sheet.classList.contains('expanded')
     && !e.target.closest('.hcards') && !e.target.closest('.fire-rail')
+    && !e.target.closest('.feat-rail') && !e.target.closest('.theme-rail')
     && !e.target.closest('#sheet .chip-bar')
     && !e.target.closest('#sheetHandle');
 
@@ -7416,6 +8736,16 @@ function setSheet(html) {
   inner.classList.add('anim');
   inner.querySelectorAll('[data-open-venue]').forEach(el =>
     el.addEventListener('click', () => openVenue(el.dataset.openVenue)));
+  inner.querySelectorAll('[data-theme-list]').forEach(el =>
+    el.addEventListener('click', () => openThemeList(el.dataset.themeList)));
+  inner.querySelectorAll('[data-top-type]').forEach(el =>
+    el.addEventListener('click', () => {
+      state.topType = el.dataset.topType;
+      const sh = document.getElementById('sheet');
+      const y = sh ? sh.scrollTop : 0;
+      renderHomeSheet();
+      if (sh) sh.scrollTop = y;
+    }));
   inner.querySelectorAll('[data-cafe-tab]').forEach(el =>
     el.addEventListener('click', () => {
       state.cafeTab = el.dataset.cafeTab;
@@ -7424,6 +8754,9 @@ function setSheet(html) {
   inner.querySelectorAll('[data-cat]').forEach(el =>
     el.addEventListener('click', () =>
       chipBarEl.querySelector(`.chip[data-filter="${el.dataset.cat}"]`)?.click()));
+  inner.querySelector('[data-provinces]')?.addEventListener('click', openProvinces);
+  initFeatureBanner(inner);
+  observeSearchPin();
   inner.querySelectorAll('[data-see-all]').forEach(el =>
     el.addEventListener('click', () =>
       chipBarEl.querySelector(`.chip[data-filter="${el.dataset.seeAll}"]`)?.click()));

@@ -1631,6 +1631,59 @@ async function initGoogleSignIn(containerId) {
    A failure now flashes the control they pressed. It cannot be a sheet-level
    message, because the sheet has just been rebuilt by openFlameSheet() —
    hence the await. */
+/* Delete account (Nov 2026). Apple requires it in the app, and the privacy
+   policy promises it. One clear screen saying exactly what goes and what
+   stays, then a plain red button. No typing your name: Apple asks that
+   deleting be as easy as signing up was. The server does the deleting
+   (functions/api/me/delete.js); here we only ask, show the result and
+   forget the token. */
+function openDeleteAccount(me) {
+  setSheetView({ type: 'delete-account', venueId: null });
+  setSheet(`
+    <div class="pg-head">
+      <button type="button" class="vd-round pg-back" data-back aria-label="Back">${icoBack(17)}</button>
+      <div><div class="pg-title">Delete your account?</div><div class="pg-title-en">${me.handle ? '@' + esc(me.handle) : ''}</div></div>
+    </div>
+    <div class="fl-card del-card">
+      <p class="del-lead">This deletes your account and everything in it, for good. It can't be undone.</p>
+      <div class="del-h">What gets deleted</div>
+      <ul class="del-list">
+        <li>Your ${plural(me.total_checkins || 0, 'check-in', 'check-ins')} and ${(me.embers_total || 0).toLocaleString('en')} embers</li>
+        <li>Your level, badges, challenges and streak</li>
+        <li>Your "How was it?" ratings and rankings</li>
+        <li>Your username and profile photo</li>
+      </ul>
+      <div class="del-h">What stays</div>
+      <ul class="del-list">
+        <li>Places you saved stay on this phone. They were never in your account.</li>
+        <li>Venues you listed stay on Paisaidee. You just stop being their manager.</li>
+      </ul>
+      <p class="del-err" id="delErr" role="alert"></p>
+      <button type="button" class="btn del-btn" data-confirm-delete>Delete my account</button>
+      <button type="button" class="btn btn-back" data-back style="width:100%;margin-top:8px;">Keep my account</button>
+    </div>`);
+  const sh = document.getElementById('sheet');
+  if (sh) sh.scrollTop = 0;
+  document.querySelectorAll('#sheetInner [data-back]').forEach(b => b.addEventListener('click', openFlameSheet));
+  const btn = document.querySelector('#sheetInner [data-confirm-delete]');
+  btn?.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const err = document.getElementById('delErr');
+    try {
+      const r = await apiFetch('/api/me/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || !out.ok) throw new Error(out.error || "Couldn't delete your account just now. Nothing was deleted. Please try again.");
+      setAppToken(null);
+      state.me = null; state.myCounts = {}; state.myReactions = {};
+      await openFlameSheet();
+      showToast('Your account has been deleted.');
+    } catch (e) {
+      if (err) err.textContent = e.message;
+      btn.disabled = false; btn.textContent = 'Delete my account';
+    }
+  });
+}
+
 async function signOut() {
   let ok = false;
   try {
@@ -2794,7 +2847,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
 
       <div class="btn-row"><button class="btn btn-back" data-home style="flex:1;">Done</button></div>
       <button class="fl-signout" data-sign-out>Sign out</button>
-      <p class="fl-legal"><a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> · <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a></p>
+      <p class="fl-legal"><a href="legal/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> · <a href="legal/terms.html" target="_blank" rel="noopener">Terms of Use</a> · <button type="button" class="fl-delete-link" data-delete-account>Delete account</button></p>
     </div>
   `);
   const sheet = document.getElementById('sheet');
@@ -2809,6 +2862,7 @@ function renderFlameSheetBody(me, flameHtml, myVenuesResult = { ok: true, venues
   state.me = me;
   document.querySelector('[data-go-map]')?.addEventListener('click', goToMap);
   document.querySelector('[data-sign-out]')?.addEventListener('click', signOut);
+  document.querySelector('[data-delete-account]')?.addEventListener('click', () => openDeleteAccount(me));
 
   /* The avatar picker and the profile-photo upload are js/avatar.js now, so
      their handlers cannot be attached until it has loaded. openFlameSheet()

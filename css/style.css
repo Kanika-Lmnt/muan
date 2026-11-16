@@ -4931,3 +4931,15 @@ button.vd-myrx-ask {
 .mi-agree { margin: 14px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--secondary); max-width: 360px; }
 .mi-agree a, .fl-legal a { color: var(--flame-text); font-weight: 600; }
 .fl-legal { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: var(--secondary); text-align: center; }
+
+/* ---------- Delete account (openDeleteAccount() in js/app.js) ---------- */
+.fl-delete-link { background: none; border: none; padding: 0; font: inherit; color: var(--secondary); text-decoration: underline; cursor: pointer; }
+.del-card { text-align: left; }
+.del-lead { margin: 0 0 6px; font-size: 15px; line-height: 1.5; color: var(--bone); font-weight: 600; }
+.del-h { margin-top: 14px; font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--secondary); }
+.del-list { margin: 6px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.55; color: var(--bone); }
+.del-list li + li { margin-top: 3px; }
+.del-err:not(:empty) { margin: 12px 0 0; font-size: 13.5px; color: var(--flame-text); }
+.del-btn { display: block; width: 100%; margin-top: 18px; padding: 15px 16px; border-radius: 16px; font: 700 16px var(--font); background: #C93A1F; color: #fff; border: none; cursor: pointer; }
+.del-btn:disabled { opacity: .7; }
+[data-theme="dark"] .del-btn { background: #E5482B; }

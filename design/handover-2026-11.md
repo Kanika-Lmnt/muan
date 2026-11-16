@@ -475,3 +475,20 @@ user_reactions) and eight badge rows. Safe to run twice.
   >90d"; nothing did it until now.
 - **Still missing for the App Store:** in-app "Delete my account". Apple
   requires it. Until then the policy says to email.
+
+## 24. Delete account, small counts, pet v2 (17 Nov)
+
+- **Delete account** (You → bottom → Delete account): one screen listing
+  what goes and what stays, then a red button. functions/api/me/delete.js
+  deletes the user's photos from Cloudinary first (Admin API, by the
+  paisaidee/users/<id>/ prefix; if that fails nothing is deleted), then
+  every row in one D1 batch: sessions, checkins, badges, challenges,
+  reactions, quest_progress, comments, friendships, venue_owners, users.
+  Venues they listed stay. Tested locally with a throwaway user.
+  The privacy policy now points to it.
+- **People counts below 3** are no longer in /api/venues at all.
+- **Pet v2** lives in design/pet/tokay-dressup.html (also the "Tokay
+  Dress-up" artifact): growth stages at levels 1/5/10/20, items earned by
+  check-in rules, levelled coffee (paper → ceramic → rare latte art), a
+  collection book with grey silhouettes, unlock and grow-up reveals, and a
+  go-out simulator. Still a prototype, not in the app.

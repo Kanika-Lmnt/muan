@@ -131,7 +131,11 @@ async function handleGet(context) {
       if (r.logo !== null) v.logo = r.logo;
       // date only: when the listing was last changed (venue page shows it)
       if (r.updated_at) v.updated = String(r.updated_at).slice(0, 10);
-      if (people30.get(r.id)) v.people_30d = people30.get(r.id);
+      // only from 3 people up: "1 person this month" at a quiet place could
+      // tell someone who went (privacy policy: counts, never names). The app
+      // never shows fewer than 3 anyway (TOP_MIN_PEOPLE in js/app.js); this
+      // keeps the raw API from saying it either.
+      if ((people30.get(r.id) || 0) >= 3) v.people_30d = people30.get(r.id);
       return v;
     });
 

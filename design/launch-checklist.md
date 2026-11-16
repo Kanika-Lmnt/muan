@@ -18,9 +18,10 @@ keep an eye on after. Tick things off by changing `[ ]` to `[x]`.
   relevant law is the Law on Electronic Data Protection (2017). Claude is not
   a lawyer: the pages are a careful draft written from what the code does,
   not legal advice.
-- [ ] **Delete my account button** inside the app. Apple requires in-app
-  account deletion for any app with sign-up. Until it exists, the policy
-  says to email, and you must actually delete within 30 days when asked.
+- [x] **Delete my account button** inside the app (built 17 Nov: You →
+  Delete account at the bottom; functions/api/me/delete.js). It goes live
+  with the next deploy. Email requests (people who can't get into the app)
+  still have to be done by hand within 30 days.
 
 ## Before the App Store
 
@@ -58,8 +59,8 @@ winner gets...") can count as a lottery, which usually needs permission.
 Ask before running one. The same goes for paid alcohol promotions: alcohol
 advertising can have its own rules.
 
-**Low numbers.** "1 person this month" on a quiet venue could let someone
-guess who went. Consider hiding counts below 3.
+**Low numbers.** Done: people counts below 3 are never shown, in the app or
+in the raw venue data. Keep it that way for any new stat.
 
 **The business itself.** Once money comes in (sponsored slots, partners),
 register a business and put its name in the terms as the operator, so the
